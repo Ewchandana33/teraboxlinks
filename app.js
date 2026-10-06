@@ -553,19 +553,28 @@ function configureAccessGuide() {
     });
 }
 /*
- * Ad slots stay collapsed until an ad has actually rendered inside them.
- * The ad network script is injected only when the slot is about to scroll
- * into view, so it never competes with the first render (LCP, main thread).
- * Ad code is never modified once running.
+ * AD SLOTS (fixed)
+ *
+ * Previous problem: slots were collapsed (height 0, overflow hidden, inert)
+ * while the ad script ran, so the ad network had no visible area to render
+ * into and the ad never appeared.
+ *
+ * Now: when a slot is activated it is first made visible (the ad frame has
+ * its own min-height in CSS), then the ad script is injected. The slot is
+ * collapsed again only if the script fails or nothing renders after
+ * AD_GIVE_UP_MS. A page-load fallback guarantees activation even when
+ * IntersectionObserver does not fire.
  */
+const AD_GIVE_UP_MS = 15000;
+const AD_FALLBACK_DELAY_MS = 4000;
 function loadAdSlot(slot) {
     if (slot.dataset.adLoaded === "true") {
-        return false;
+        return null;
     }
     const frame = slot.querySelector(".ad-frame");
     const source = getValidatedHttpsUrl(slot.dataset.adScript);
     if (!frame || !source) {
-        return false;
+        return null;
     }
     slot.dataset.adLoaded = "true";
     if (slot.dataset.adKey) {
@@ -582,7 +591,7 @@ function loadAdSlot(slot) {
     script.src = source;
     script.setAttribute("data-cfasync", "false");
     frame.appendChild(script);
-    return true;
+    return script;
 }
 function configureAdSlots() {
     const slots = document.querySelectorAll("[data-ad-slot]");
@@ -592,6 +601,8 @@ function configureAdSlots() {
             return;
         }
         let timer = 0;
+        let gaveUp = false;
+        let activated = false;
         function hasRenderedAd() {
             const candidates = frame.querySelectorAll(
                 "iframe, img, video, a"
@@ -600,17 +611,26 @@ function configureAdSlots() {
                 return node.offsetWidth >= 50 && node.offsetHeight >= 30;
             });
         }
+        function showSlot() {
+            slot.classList.remove("is-pending");
+            slot.classList.add("is-ready");
+            slot.removeAttribute("inert");
+            slot.removeAttribute("aria-hidden");
+        }
+        function hideSlot() {
+            slot.classList.add("is-pending");
+            slot.classList.remove("is-ready");
+            slot.setAttribute("inert", "");
+            slot.setAttribute("aria-hidden", "true");
+        }
         function applyState() {
             timer = 0;
-            const isReady = hasRenderedAd();
-            slot.classList.toggle("is-pending", !isReady);
-            slot.classList.toggle("is-ready", isReady);
-            if (isReady) {
-                slot.removeAttribute("inert");
-                slot.removeAttribute("aria-hidden");
-            } else {
-                slot.setAttribute("inert", "");
-                slot.setAttribute("aria-hidden", "true");
+            if (hasRenderedAd()) {
+                showSlot();
+                return;
+            }
+            if (gaveUp) {
+                hideSlot();
             }
         }
         function scheduleCheck() {
@@ -619,10 +639,37 @@ function configureAdSlots() {
             }
             timer = window.setTimeout(applyState, 120);
         }
+        function giveUp() {
+            gaveUp = true;
+            applyState();
+            if (!hasRenderedAd()) {
+                console.warn(
+                    "[ads] No ad rendered for slot '" +
+                    slot.dataset.adSlot +
+                    "'. Possible causes: ad blocker, domain not approved " +
+                    "in Adsterra, or the script domain is blocked."
+                );
+            }
+        }
         function activate() {
-            if (!loadAdSlot(slot)) {
+            if (activated) {
                 return;
             }
+            activated = true;
+            /* Make the slot visible BEFORE the ad script runs. */
+            showSlot();
+            const script = loadAdSlot(slot);
+            if (!script) {
+                hideSlot();
+                return;
+            }
+            script.addEventListener("error", () => {
+                console.warn(
+                    "[ads] Ad script failed to load: " + script.src
+                );
+                gaveUp = true;
+                hideSlot();
+            });
             if (typeof MutationObserver === "function") {
                 new MutationObserver(scheduleCheck).observe(frame, {
                     childList: true,
@@ -634,9 +681,10 @@ function configureAdSlots() {
             if (typeof ResizeObserver === "function") {
                 new ResizeObserver(scheduleCheck).observe(frame);
             }
-            [1000, 2500, 5000, 10000, 20000].forEach((delay) => {
+            [1000, 2500, 5000, 10000].forEach((delay) => {
                 window.setTimeout(scheduleCheck, delay);
             });
+            window.setTimeout(giveUp, AD_GIVE_UP_MS);
         }
         if (typeof IntersectionObserver === "function") {
             const observer = new IntersectionObserver((entries) => {
@@ -651,13 +699,18 @@ function configureAdSlots() {
                 rootMargin: "600px 0px"
             });
             observer.observe(slot);
-            return;
         }
-        window.addEventListener("load", () => {
-            window.setTimeout(activate, 2000);
-        }, {
-            once: true
-        });
+        /* Fallback: activate after page load even if the observer is silent. */
+        const startFallback = () => {
+            window.setTimeout(activate, AD_FALLBACK_DELAY_MS);
+        };
+        if (document.readyState === "complete") {
+            startFallback();
+        } else {
+            window.addEventListener("load", startFallback, {
+                once: true
+            });
+        }
     });
 }
 let coreInitialized = false;
