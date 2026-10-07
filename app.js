@@ -565,7 +565,7 @@ function configureAccessGuide() {
  * AD_GIVE_UP_MS. A page-load fallback guarantees activation even when
  * IntersectionObserver does not fire.
  */
-const AD_GIVE_UP_MS = 15000;
+const AD_GIVE_UP_MS = 7000;
 const AD_FALLBACK_DELAY_MS = 4000;
 function loadAdSlot(slot) {
     if (slot.dataset.adLoaded === "true") {
