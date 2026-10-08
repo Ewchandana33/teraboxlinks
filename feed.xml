@@ -5,9 +5,16 @@
         <link>https://teraboxlinks.pages.dev/</link>
         <description>TeraBox link directory with setup, troubleshooting and safety guides for opening, saving and downloading shared files.</description>
         <language>en</language>
-        <lastBuildDate>Sat, 03 Oct 2026 00:00:00 GMT</lastBuildDate>
+        <lastBuildDate>Thu, 08 Oct 2026 00:00:00 GMT</lastBuildDate>
         <ttl>360</ttl>
         <atom:link href="https://teraboxlinks.pages.dev/feed.xml" rel="self" type="application/rss+xml"/>
+        <item>
+            <title>TeraBox Movie Links: Browse Video Bundles</title>
+            <link>https://teraboxlinks.pages.dev/posts/terabox-movie</link>
+            <guid isPermaLink="true">https://teraboxlinks.pages.dev/posts/terabox-movie</guid>
+            <pubDate>Thu, 08 Oct 2026 00:00:00 GMT</pubDate>
+            <description>Explore the current shared video bundles, choose an available file in TeraBox, and understand why titles and access can vary by collection.</description>
+        </item>
         <item>
             <title>How to Use TeraBox Shared Links</title>
             <link>https://teraboxlinks.pages.dev/terabox-guide</link>
