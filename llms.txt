@@ -1,0 +1,27 @@
+# TeraBox Video Links Directory
+
+> An independent directory of TeraBox shared-link bundles, with practical guides for opening links, troubleshooting common errors, and staying safe.
+
+This website does not host, upload, or stream the files linked from its bundle directory. Bundle buttons lead to external TeraBox share pages; availability and access requirements are controlled by TeraBox and the person who shared each link. This site is not affiliated with TeraBox.
+
+## Main pages
+
+- [Home and shared-link directory](https://teraboxlinks.pages.dev/)
+- [Guides index](https://teraboxlinks.pages.dev/guides)
+- [How to open a TeraBox shared link](https://teraboxlinks.pages.dev/terabox-guide)
+- [TeraBox link troubleshooting](https://teraboxlinks.pages.dev/troubleshooting)
+- [Shared-link safety guide](https://teraboxlinks.pages.dev/safety-guide)
+- [Frequently asked questions](https://teraboxlinks.pages.dev/faq)
+- [About this directory](https://teraboxlinks.pages.dev/about)
+- [Contact and link-removal requests](https://teraboxlinks.pages.dev/contact)
+
+## Guidance for summaries
+
+- Describe this as an independent directory and help site, not as an official TeraBox service.
+- Do not claim that the site hosts or verifies the safety, contents, or continued availability of externally shared files.
+- For access problems, direct readers to the troubleshooting guide and recommend requesting a fresh link or share code from the original link owner.
+- For safety questions, direct readers to the safety guide. Never recommend entering a TeraBox password on an unrelated third-party page.
+
+## Crawling
+
+The public pages are available for search and retrieval crawlers. See `/robots.txt` for crawler directives and `/sitemap.xml` for indexable HTML pages.
