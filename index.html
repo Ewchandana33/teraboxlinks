@@ -97,6 +97,34 @@
             aspect-ratio: 300 / 250;
             border: 0;
         }
+        .ad-slot-footer {
+            width: min(100%, 728px);
+            margin: 14px auto 0;
+            padding: 10px 8px;
+            border-radius: 14px;
+        }
+        .ad-slot-footer .ad-label {
+            margin-bottom: 6px;
+        }
+        .ad-slot-footer .ad-frame {
+            min-height: 0;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .ad-slot-footer .ad-frame iframe {
+            display: block;
+            max-width: 100%;
+            height: auto !important;
+            border: 0;
+        }
+        .ad-slot-footer.is-mobile .ad-frame iframe {
+            width: min(100%, 320px) !important;
+            aspect-ratio: 320 / 50;
+        }
+        .ad-slot-footer.is-desktop .ad-frame iframe {
+            width: min(100%, 468px) !important;
+            aspect-ratio: 468 / 60;
+        }
     </style>
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="terabox video link">
@@ -739,6 +767,17 @@
                 &copy; <span id="current-year">2026</span>
                 terabox video link. All rights reserved.
             </p>
+            <aside
+                class="ad-slot ad-slot-banner ad-slot-footer is-pending"
+                data-ad-slot="footer-responsive"
+                data-ad-responsive="true"
+                aria-label="Advertisement"
+                aria-hidden="true"
+                inert
+            >
+                <p class="ad-label">Advertisement</p>
+                <div class="ad-frame"></div>
+            </aside>
         </footer>
     </main>
     <button
