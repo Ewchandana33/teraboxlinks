@@ -628,6 +628,12 @@ const AD_SLOT_RENDER_GRACE_MS = 20000;
 function configureAdSlots(root = document) {
     const slots = root.querySelectorAll("[data-ad-slot]");
     slots.forEach((slot) => {
+        if (
+            slot.dataset.adResponsive === "true" &&
+            slot.dataset.adsterraReady !== "true"
+        ) {
+            return;
+        }
         if (slot.dataset.adSlotConfigured === "true") {
             return;
         }
@@ -743,6 +749,78 @@ function configureAdSlots(root = document) {
         }
     });
 }
+/*
+ * Load exactly one existing footer banner unit for the current viewport.
+ * Wait for the page's existing Adsterra scripts before setting the shared
+ * atOptions global, and defer if a modal ad is currently open.
+ */
+function initializeResponsiveFooterAd() {
+    const slot = document.querySelector(
+        '[data-ad-slot="footer-responsive"]'
+    );
+    const frame = slot?.querySelector(".ad-frame");
+    if (!slot || !frame) {
+        return;
+    }
+    let started = false;
+    function loadFooterAd() {
+        if (started) {
+            return;
+        }
+        const openDialog = document.querySelector("dialog[open]");
+        if (openDialog) {
+            openDialog.addEventListener("close", loadFooterAd, {
+                once: true
+            });
+            return;
+        }
+        started = true;
+        const isMobile = window.matchMedia("(max-width: 767px)").matches;
+        const unit = isMobile
+            ? {
+                key: "e36067abb7a56c6bad341a3a81bc72a5",
+                width: 320,
+                height: 50,
+                label: "mobile"
+            }
+            : {
+                key: "60e4d1301e8840023638e505af0dfba1",
+                width: 468,
+                height: 60,
+                label: "desktop"
+            };
+        slot.classList.add(isMobile ? "is-mobile" : "is-desktop");
+        const optionsScript = document.createElement("script");
+        optionsScript.type = "text/javascript";
+        optionsScript.textContent =
+            "window.atOptions = " + JSON.stringify({
+                key: unit.key,
+                format: "iframe",
+                height: unit.height,
+                width: unit.width,
+                params: {}
+            }) + ";";
+        const invokeScript = document.createElement("script");
+        invokeScript.dataset.adsterra = "footer-" + unit.label;
+        invokeScript.dataset.cfasync = "false";
+        invokeScript.async = true;
+        invokeScript.type = "text/javascript";
+        invokeScript.src =
+            "https://deliberatewatchful.com/" +
+            unit.key +
+            "/invoke.js";
+        slot.dataset.adsterraReady = "true";
+        frame.append(optionsScript, invokeScript);
+        configureAdSlots();
+    }
+    if (document.readyState === "complete") {
+        loadFooterAd();
+    } else {
+        window.addEventListener("load", loadFooterAd, {
+            once: true
+        });
+    }
+}
 let coreInitialized = false;
 let remainingInitialized = false;
 function initializeCore() {
@@ -764,6 +842,7 @@ function initializeRemaining() {
     secureExternalLinks();
     updateCopyrightYear();
     configureAccessGuide();
+    initializeResponsiveFooterAd();
     configureAdSlots();
 }
 function initializeApplication() {
