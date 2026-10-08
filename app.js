@@ -553,46 +553,12 @@ function configureAccessGuide() {
     });
 }
 /*
- * AD SLOTS (fixed)
- *
- * Previous problem: slots were collapsed (height 0, overflow hidden, inert)
- * while the ad script ran, so the ad network had no visible area to render
- * into and the ad never appeared.
- *
- * Now: when a slot is activated it is first made visible (the ad frame has
- * its own min-height in CSS), then the ad script is injected. The slot is
- * collapsed again only if the script fails or nothing renders after
- * AD_GIVE_UP_MS. A page-load fallback guarantees activation even when
- * IntersectionObserver does not fire.
+ * Adsterra's publisher code is embedded directly in index.html so each slot
+ * runs in the body beside its own placement markup. This watcher only manages
+ * empty-slot presentation; it never injects, rewrites, or races ad scripts.
  */
-const AD_GIVE_UP_MS = 7000;
-const AD_FALLBACK_DELAY_MS = 4000;
-function loadAdSlot(slot) {
-    if (slot.dataset.adLoaded === "true") {
-        return null;
-    }
-    const frame = slot.querySelector(".ad-frame");
-    const source = getValidatedHttpsUrl(slot.dataset.adScript);
-    if (!frame || !source) {
-        return null;
-    }
-    slot.dataset.adLoaded = "true";
-    if (slot.dataset.adKey) {
-        window.atOptions = {
-            key: slot.dataset.adKey,
-            format: "iframe",
-            height: Number(slot.dataset.adHeight) || 250,
-            width: Number(slot.dataset.adWidth) || 300,
-            params: {}
-        };
-    }
-    const script = document.createElement("script");
-    script.async = true;
-    script.src = source;
-    script.setAttribute("data-cfasync", "false");
-    frame.appendChild(script);
-    return script;
-}
+const AD_SCRIPT_LOAD_TIMEOUT_MS = 30000;
+const AD_SLOT_RENDER_GRACE_MS = 20000;
 function configureAdSlots() {
     const slots = document.querySelectorAll("[data-ad-slot]");
     slots.forEach((slot) => {
@@ -601,14 +567,14 @@ function configureAdSlots() {
             return;
         }
         let timer = 0;
-        let gaveUp = false;
-        let activated = false;
+        let noFillConfirmed = false;
         function hasRenderedAd() {
             const candidates = frame.querySelectorAll(
                 "iframe, img, video, a"
             );
             return Array.prototype.some.call(candidates, (node) => {
-                return node.offsetWidth >= 50 && node.offsetHeight >= 30;
+                const bounds = node.getBoundingClientRect();
+                return bounds.width >= 50 && bounds.height >= 30;
             });
         }
         function showSlot() {
@@ -629,7 +595,7 @@ function configureAdSlots() {
                 showSlot();
                 return;
             }
-            if (gaveUp) {
+            if (noFillConfirmed) {
                 hideSlot();
             }
         }
@@ -639,77 +605,67 @@ function configureAdSlots() {
             }
             timer = window.setTimeout(applyState, 120);
         }
-        function giveUp() {
-            gaveUp = true;
-            applyState();
-            if (!hasRenderedAd()) {
-                console.warn(
-                    "[ads] No ad rendered for slot '" +
-                    slot.dataset.adSlot +
-                    "'. Possible causes: ad blocker, domain not approved " +
-                    "in Adsterra, or the script domain is blocked."
-                );
-            }
-        }
-        function activate() {
-            if (activated) {
-                return;
-            }
-            activated = true;
-            /* Make the slot visible BEFORE the ad script runs. */
-            showSlot();
-            const script = loadAdSlot(slot);
-            if (!script) {
-                hideSlot();
-                return;
-            }
+        const adScripts = frame.querySelectorAll("script[data-adsterra]");
+        let loadTimer = 0;
+        adScripts.forEach((script) => {
             script.addEventListener("error", () => {
                 console.warn(
-                    "[ads] Ad script failed to load: " + script.src
+                    "[ads] Adsterra script failed for slot '" +
+                    slot.dataset.adSlot +
+                    "'."
                 );
-                gaveUp = true;
-                hideSlot();
-            });
-            if (typeof MutationObserver === "function") {
-                new MutationObserver(scheduleCheck).observe(frame, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ["style", "class", "hidden", "width", "height"]
-                });
-            }
-            if (typeof ResizeObserver === "function") {
-                new ResizeObserver(scheduleCheck).observe(frame);
-            }
-            [1000, 2500, 5000, 10000].forEach((delay) => {
-                window.setTimeout(scheduleCheck, delay);
-            });
-            window.setTimeout(giveUp, AD_GIVE_UP_MS);
-        }
-        if (typeof IntersectionObserver === "function") {
-            const observer = new IntersectionObserver((entries) => {
-                const visible = entries.some((entry) => {
-                    return entry.isIntersecting;
-                });
-                if (visible) {
-                    observer.disconnect();
-                    activate();
-                }
+                noFillConfirmed = true;
+                scheduleCheck();
             }, {
-                rootMargin: "600px 0px"
-            });
-            observer.observe(slot);
-        }
-        /* Fallback: activate after page load even if the observer is silent. */
-        const startFallback = () => {
-            window.setTimeout(activate, AD_FALLBACK_DELAY_MS);
-        };
-        if (document.readyState === "complete") {
-            startFallback();
-        } else {
-            window.addEventListener("load", startFallback, {
                 once: true
             });
+            script.addEventListener("load", () => {
+                window.clearTimeout(loadTimer);
+                if (!hasRenderedAd()) {
+                    window.setTimeout(() => {
+                        noFillConfirmed = true;
+                        scheduleCheck();
+                    }, AD_SLOT_RENDER_GRACE_MS);
+                }
+            }, {
+                once: true
+            });
+        });
+        if (typeof MutationObserver === "function") {
+            new MutationObserver(scheduleCheck).observe(frame, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ["style", "class", "hidden", "width", "height"]
+            });
+        }
+        if (typeof ResizeObserver === "function") {
+            new ResizeObserver(scheduleCheck).observe(frame);
+        }
+        /* Catch code that rendered before this monitor was initialized. */
+        scheduleCheck();
+        /*
+         * Some browser extensions block a script without a useful error event.
+         * Keep the slot available for slow responses, then collapse it only if
+         * no visible creative has appeared after the load timeout.
+         */
+        if (adScripts.length) {
+            loadTimer = window.setTimeout(() => {
+                if (!hasRenderedAd()) {
+                    console.warn(
+                        "[ads] No creative rendered for slot '" +
+                        slot.dataset.adSlot +
+                        "' within " + AD_SCRIPT_LOAD_TIMEOUT_MS + "ms."
+                    );
+                }
+                noFillConfirmed = true;
+                scheduleCheck();
+            }, AD_SCRIPT_LOAD_TIMEOUT_MS);
+        } else {
+            window.setTimeout(() => {
+                noFillConfirmed = true;
+                scheduleCheck();
+            }, AD_SLOT_RENDER_GRACE_MS);
         }
     });
 }
