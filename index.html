@@ -52,6 +52,51 @@
             background: transparent;
             border-color: transparent;
         }
+        .ad-slot-top {
+            position: relative;
+            left: 50%;
+            width: min(100vw, 728px);
+            margin: 0 0 clamp(14px, 3vw, 24px);
+            padding: 9px 0;
+            overflow: hidden;
+            border-radius: 14px;
+            transform: translateX(-50%);
+        }
+        .ad-slot-top .ad-label {
+            margin-bottom: 6px;
+        }
+        .ad-slot-top .ad-frame {
+            width: 100%;
+            min-height: 0;
+            align-items: center;
+        }
+        .ad-slot-top .ad-frame iframe {
+            display: block;
+            width: 100% !important;
+            max-width: 100%;
+            height: auto !important;
+            aspect-ratio: 728 / 90;
+            border: 0;
+        }
+        .ad-slot-modal {
+            width: 100%;
+            margin: 22px auto 0;
+            padding: 12px 8px;
+            border-radius: 14px;
+        }
+        .ad-slot-modal .ad-frame {
+            min-height: 0;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .ad-slot-modal .ad-frame iframe {
+            display: block;
+            width: min(100%, 300px) !important;
+            max-width: 100%;
+            height: auto !important;
+            aspect-ratio: 300 / 250;
+            border: 0;
+        }
     </style>
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="terabox video link">
@@ -220,6 +265,31 @@
                 <a href="/about">About</a>
             </div>
         </nav>
+        <aside
+            class="ad-slot ad-slot-banner ad-slot-top"
+            data-ad-slot="banner"
+            aria-label="Advertisement"
+        >
+            <p class="ad-label">Advertisement</p>
+            <div class="ad-frame">
+                <script type="text/javascript">
+                    window.atOptions = {
+                        key: "a5d95384ac0bc996d5aed58d1bba8a05",
+                        format: "iframe",
+                        height: 90,
+                        width: 728,
+                        params: {}
+                    };
+                </script>
+                <script
+                    data-adsterra="banner"
+                    data-cfasync="false"
+                    async
+                    type="text/javascript"
+                    src="https://deliberatewatchful.com/a5d95384ac0bc996d5aed58d1bba8a05/invoke.js"
+                ></script>
+            </div>
+        </aside>
         <div class="hero-grid">
         <header class="hero-header">
             <div class="logo-ring">
@@ -591,31 +661,6 @@
             </ol>
             <a class="card-link" href="/safety-guide">Read the full safety guide &rarr;</a>
         </section>
-        <aside
-            class="ad-slot ad-slot-banner"
-            data-ad-slot="banner"
-            aria-label="Advertisement"
-        >
-            <p class="ad-label">Advertisement</p>
-            <div class="ad-frame">
-                <script type="text/javascript">
-                    window.atOptions = {
-                        key: "28e3c6b3dd06538190edc25e209e3cfe",
-                        format: "iframe",
-                        height: 250,
-                        width: 300,
-                        params: {}
-                    };
-                </script>
-                <script
-                    data-adsterra="banner"
-                    data-cfasync="false"
-                    async
-                    type="text/javascript"
-                    src="https://deliberatewatchful.com/28e3c6b3dd06538190edc25e209e3cfe/invoke.js"
-                ></script>
-            </div>
-        </aside>
         <section
             class="information-card"
             id="about"
@@ -654,23 +699,6 @@
                 non-consensual or underage material.
             </p>
         </section>
-        <aside
-            class="ad-slot ad-slot-native"
-            data-ad-slot="native"
-            aria-label="Advertisement"
-        >
-            <p class="ad-label">Advertisement</p>
-            <div class="ad-frame">
-                <div id="container-375259f4c969e8eca5ff3d29855a063d"></div>
-                <script
-                    data-adsterra="native"
-                    data-cfasync="false"
-                    async
-                    type="text/javascript"
-                    src="https://deliberatewatchful.com/375259f4c969e8eca5ff3d29855a063d/invoke.js"
-                ></script>
-            </div>
-        </aside>
         </div>
         <footer class="site-footer">
             <div class="footer-divider" aria-hidden="true"></div>
@@ -899,6 +927,28 @@
                     underage material. Never enter your password anywhere
                     except the verified TeraBox app or official TeraBox
                     website.
+                </aside>
+                <!-- The existing native zone is rendered here once, only after this dialog opens. -->
+                <aside
+                    class="ad-slot ad-slot-modal"
+                    data-ad-slot="how-to-watch-modal"
+                    aria-label="Advertisement"
+                    aria-hidden="true"
+                    inert
+                >
+                    <p class="ad-label">Advertisement</p>
+                    <div class="ad-frame">
+                        <template data-adsterra-code>
+                            <script
+                                data-adsterra="native"
+                                data-cfasync="false"
+                                async
+                                type="text/javascript"
+                                src="https://deliberatewatchful.com/375259f4c969e8eca5ff3d29855a063d/invoke.js"
+                            ></script>
+                            <div id="container-375259f4c969e8eca5ff3d29855a063d"></div>
+                        </template>
+                    </div>
                 </aside>
             </div>
             <footer class="access-dialog-footer">
