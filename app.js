@@ -296,6 +296,35 @@ function createMoreLinksInterface() {
                             class="bundle-grid extra-bundle-grid"
                             aria-label="Additional video bundle links"
                         ></div>
+                        <aside
+                            class="ad-slot ad-slot-modal"
+                            data-ad-slot="show-more-modal"
+                            aria-label="Advertisement"
+                            aria-hidden="true"
+                            inert
+                        >
+                            <p class="ad-label">Advertisement</p>
+                            <div class="ad-frame">
+                                <template data-adsterra-code>
+                                    <script type="text/javascript">
+                                        window.atOptions = {
+                                            key: "28e3c6b3dd06538190edc25e209e3cfe",
+                                            format: "iframe",
+                                            height: 250,
+                                            width: 300,
+                                            params: {}
+                                        };
+                                    </script>
+                                    <script
+                                        data-adsterra="banner-rectangle"
+                                        data-cfasync="false"
+                                        async
+                                        type="text/javascript"
+                                        src="https://deliberatewatchful.com/28e3c6b3dd06538190edc25e209e3cfe/invoke.js"
+                                    ></script>
+                                </template>
+                            </div>
+                        </aside>
                     </div>
                     <div class="extra-scroll-fade" aria-hidden="true"></div>
                     <button
@@ -376,6 +405,8 @@ function createMoreLinksInterface() {
         } else {
             dialog.setAttribute("open", "");
         }
+        activateDialogAdScripts(dialog);
+        configureAdSlots(dialog);
         document.body.classList.add("dialog-is-open");
         showButton.setAttribute("aria-expanded", "true");
         const body = dialog.querySelector(".extra-dialog-body");
@@ -437,6 +468,40 @@ function secureExternalLinks() {
         );
     });
 }
+function activateDialogAdScripts(dialog) {
+    const deferredTemplates = dialog.querySelectorAll(
+        ".ad-frame template[data-adsterra-code]"
+    );
+    deferredTemplates.forEach((template) => {
+        const fragment = template.content.cloneNode(true);
+        const templateScripts = fragment.querySelectorAll("script");
+        templateScripts.forEach((inertScript) => {
+            const activeScript = document.createElement("script");
+            Array.prototype.forEach.call(inertScript.attributes, (attribute) => {
+                activeScript.setAttribute(attribute.name, attribute.value);
+            });
+            activeScript.dataset.adsterraActive = "true";
+            activeScript.textContent = inertScript.textContent;
+            inertScript.replaceWith(activeScript);
+        });
+        template.replaceWith(fragment);
+    });
+    const adScripts = dialog.querySelectorAll(
+        ".ad-frame script:not([data-adsterra-active])"
+    );
+    adScripts.forEach((inertScript) => {
+        const activeScript = document.createElement("script");
+        Array.prototype.forEach.call(inertScript.attributes, (attribute) => {
+            activeScript.setAttribute(attribute.name, attribute.value);
+        });
+        if (!activeScript.hasAttribute("data-adsterra")) {
+            activeScript.dataset.adsterra = "popup";
+        }
+        activeScript.dataset.adsterraActive = "true";
+        activeScript.textContent = inertScript.textContent;
+        inertScript.replaceWith(activeScript);
+    });
+}
 function updateCopyrightYear() {
     const yearElement = document.getElementById("current-year");
     if (!yearElement) {
@@ -487,6 +552,8 @@ function configureAccessGuide() {
         } else {
             dialog.setAttribute("open", "");
         }
+        activateDialogAdScripts(dialog);
+        configureAdSlots(dialog);
         document.body.classList.add("dialog-is-open");
         if (closeButton instanceof HTMLButtonElement) {
             closeButton.focus();
@@ -553,15 +620,22 @@ function configureAccessGuide() {
     });
 }
 /*
- * Adsterra's publisher code is embedded directly in index.html so each slot
- * runs in the body beside its own placement markup. This watcher only manages
- * empty-slot presentation; it never injects, rewrites, or races ad scripts.
+ * Each ad stays beside its placement markup. Modal publisher scripts are held
+ * inert until the dialog opens; this watcher manages only empty-slot display.
  */
 const AD_SCRIPT_LOAD_TIMEOUT_MS = 30000;
 const AD_SLOT_RENDER_GRACE_MS = 20000;
-function configureAdSlots() {
-    const slots = document.querySelectorAll("[data-ad-slot]");
+function configureAdSlots(root = document) {
+    const slots = root.querySelectorAll("[data-ad-slot]");
     slots.forEach((slot) => {
+        if (slot.dataset.adSlotConfigured === "true") {
+            return;
+        }
+        const ownerDialog = slot.closest("dialog");
+        if (ownerDialog && !ownerDialog.open) {
+            return;
+        }
+        slot.dataset.adSlotConfigured = "true";
         const frame = slot.querySelector(".ad-frame");
         if (!frame) {
             return;
