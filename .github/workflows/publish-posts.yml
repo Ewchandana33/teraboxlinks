@@ -1,0 +1,66 @@
+name: Publish posts
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "posts-src/*.md"
+      - "tools/publish_post.py"
+      - ".github/workflows/publish-posts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-posts-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Generate post pages and SEO indexes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate posts, index, sitemap, and RSS feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          posts=(posts-src/*.md)
+          if ((${#posts[@]} == 0)); then
+            echo "No Markdown posts found in posts-src/; nothing to publish."
+            exit 0
+          fi
+
+          for post in "${posts[@]}"; do
+            python tools/publish_post.py --root "$GITHUB_WORKSPACE" --update "$post"
+          done
+
+          git diff --check
+
+      - name: Commit generated site files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- posts sitemap.xml feed.xml site-files
+          if git diff --cached --quiet; then
+            echo "Generated files are already up to date."
+            exit 0
+          fi
+          git commit -m "chore(posts): publish Markdown source updates"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
