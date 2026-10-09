@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import email.utils
 import html
 import json
 import re
@@ -170,6 +171,7 @@ def article_html(meta: dict[str, str], body: str) -> str:
     schema = json.dumps(structured, ensure_ascii=False, indent=2).replace("</", "<\\/")
     content = render_markdown(body)
     return f'''<!doctype html>
+<!-- Generated from posts-src/{slug}.md; managed by tools/publish_post.py. -->
 <html lang="{language}">
 <head>
   <meta charset="utf-8">
@@ -329,11 +331,211 @@ def update_feed(path: Path, meta: dict[str, str]) -> None:
     tree.write(path, encoding="utf-8", xml_declaration=True)
 
 
+def read_published_slugs(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"Cannot read generated-post manifest {path}: {exc}")
+    if not isinstance(data, list) or any(
+        not isinstance(slug, str)
+        or not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", slug)
+        for slug in data
+    ):
+        fail(f"Invalid generated-post manifest: {path}")
+    return set(data)
+
+
+def set_index_cards(
+    path: Path,
+    posts: dict[str, tuple[dict[str, str], str]],
+    managed_slugs: set[str],
+) -> None:
+    """Replace generated-post cards while preserving hand-authored guide cards."""
+    text = path.read_text(encoding="utf-8")
+    grid = re.search(r'(<div class="guide-grid">)(.*?)(</div>)', text, re.DOTALL)
+    if not grid:
+        fail(f"Could not find a guide-grid in {path}.")
+
+    card_pattern = re.compile(
+        r'<a\b(?P<attrs>[^>]*)>.*?</a>',
+        re.DOTALL,
+    )
+
+    def keep_unmanaged_card(match: re.Match[str]) -> str:
+        href = re.search(r'\bhref="/posts/([^"]+)"', match.group("attrs"))
+        if href and href.group(1) in managed_slugs:
+            return ""
+        return match.group(0)
+
+    contents = card_pattern.sub(keep_unmanaged_card, grid.group(2)).rstrip()
+    cards = []
+    for slug in sorted(
+        posts, key=lambda s: (posts[s][0]["date"], s), reverse=True
+    ):
+        meta = posts[slug][0]
+        cards.append(
+            f'<a class="guide-card" href="/posts/{html.escape(slug, quote=True)}">'
+            f'<strong>{html.escape(meta["title"])}</strong>'
+            f'<span>{html.escape(meta["description"])}</span></a>'
+        )
+    if cards:
+        contents += "\n" + "\n".join("                    " + card for card in cards)
+    contents += "\n                "
+    text = text[:grid.start(2)] + contents + text[grid.end(2):]
+    path.write_text(text, encoding="utf-8")
+
+
+def remove_sitemap_entries(path: Path, slugs: set[str]) -> None:
+    if not slugs:
+        return
+    tree = ET.parse(path)
+    root = tree.getroot()
+    targets = {f"{SITE}/posts/{slug}" for slug in slugs}
+    for entry in list(root.findall(f"{{{SITEMAP_NS}}}url")):
+        loc = entry.find(f"{{{SITEMAP_NS}}}loc")
+        if loc is not None and loc.text in targets:
+            root.remove(entry)
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+
+
+def remove_feed_items(path: Path, slugs: set[str]) -> None:
+    if not slugs:
+        return
+    tree = ET.parse(path)
+    channel = tree.getroot().find("channel")
+    if channel is None:
+        fail(f"RSS channel not found in {path}.")
+    targets = {f"{SITE}/posts/{slug}" for slug in slugs}
+    for item in list(channel.findall("item")):
+        if item.findtext("link") in targets or item.findtext("guid") in targets:
+            channel.remove(item)
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+
+
+def refresh_feed_build_date(path: Path) -> None:
+    """Set RSS lastBuildDate from remaining entries, not a deleted newest post."""
+    tree = ET.parse(path)
+    channel = tree.getroot().find("channel")
+    if channel is None:
+        fail(f"RSS channel not found in {path}.")
+    dates = []
+    for item in channel.findall("item"):
+        value = item.findtext("pubDate")
+        if value:
+            try:
+                dates.append(email.utils.parsedate_to_datetime(value))
+            except (TypeError, ValueError, OverflowError):
+                continue
+    build_date = channel.find("lastBuildDate")
+    if dates:
+        latest = max(dates).astimezone(dt.timezone.utc)
+        if build_date is None:
+            build_date = ET.Element("lastBuildDate")
+            language = channel.find("language")
+            channel.insert(list(channel).index(language) + 1 if language is not None else 0, build_date)
+        build_date.text = latest.strftime("%a, %d %b %Y %H:%M:%S GMT")
+    elif build_date is not None:
+        channel.remove(build_date)
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+
+
+def sync_posts(root: Path) -> None:
+    """Reconcile generated outputs with the complete posts-src Markdown set."""
+    source_dir = root / "posts-src"
+    manifest = root / "tools" / "published-posts.json"
+    index = root / "posts" / "index.html"
+    sitemap = root / "sitemap.xml"
+    feed = root / "feed.xml"
+    for path in (source_dir, index, sitemap, feed):
+        if not path.exists():
+            fail(f"Run this from the site repository root; missing: {path.relative_to(root)}")
+
+    # Parse and validate every source before changing any generated output.
+    posts: dict[str, tuple[dict[str, str], str]] = {}
+    for source in sorted(source_dir.glob("*.md")):
+        meta, body = parse_post(source)
+        slug = meta["slug"]
+        if slug in posts:
+            fail(f"Duplicate post slug: {slug}")
+        posts[slug] = (meta, body)
+
+    previous_slugs = read_published_slugs(manifest)
+    current_slugs = set(posts)
+    managed_slugs = previous_slugs | current_slugs
+
+    for slug in current_slugs - previous_slugs:
+        article = root / "posts" / f"{slug}.html"
+        if article.exists():
+            existing = article.read_text(encoding="utf-8")
+            if "managed by tools/publish_post.py" not in existing:
+                fail(
+                    f"Refusing to overwrite untracked page posts/{slug}.html. "
+                    "Rename the Markdown slug or add that page to tools/published-posts.json "
+                    "only if it was generated from this source."
+                )
+
+    # Validate XML before any writes, so malformed indexes cannot cause a
+    # partially reconciled site.
+    ET.parse(sitemap)
+    ET.parse(feed)
+    if not re.search(r'<div class="guide-grid">', index.read_text(encoding="utf-8")):
+        fail(f"Expected Posts index guide-grid was not found in {index}.")
+
+    # Remove all previously managed cards/items/URLs first, then re-add the
+    # complete current source set. Unrelated hand-authored content is retained.
+    set_index_cards(index, posts, managed_slugs)
+    remove_sitemap_entries(sitemap, managed_slugs)
+    remove_feed_items(feed, managed_slugs)
+
+    for slug in sorted(current_slugs, key=lambda s: (posts[s][0]["date"], s)):
+        meta, body = posts[slug]
+        article = root / "posts" / f"{slug}.html"
+        article.parent.mkdir(parents=True, exist_ok=True)
+        article.write_text(article_html(meta, body), encoding="utf-8")
+        update_sitemap(sitemap, slug, meta["date"])
+        update_feed(feed, meta)
+    refresh_feed_build_date(feed)
+
+    # A deleted source owns only its generated article page and matching mirror.
+    removed_slugs = previous_slugs - current_slugs
+    for slug in removed_slugs:
+        (root / "posts" / f"{slug}.html").unlink(missing_ok=True)
+
+    staging = root / "site-files"
+    if staging.is_dir():
+        for slug in removed_slugs:
+            (staging / "posts" / f"{slug}.html").unlink(missing_ok=True)
+        for relative in (
+            *(Path("posts") / f"{slug}.html" for slug in sorted(current_slugs)),
+            Path("posts") / "index.html",
+            Path("sitemap.xml"),
+            Path("feed.xml"),
+        ):
+            source_file = root / relative
+            destination = staging / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(source_file.read_text(encoding="utf-8"), encoding="utf-8")
+
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        json.dumps(sorted(current_slugs), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    print(f"Reconciled {len(current_slugs)} Markdown post(s); removed {len(removed_slugs)} deleted post(s).")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate a post page and update posts index, sitemap, RSS, and site-files mirrors."
+        description="Publish a post or reconcile all generated post outputs with posts-src/."
     )
-    parser.add_argument("post", type=Path, help="Markdown post file with the supplied front matter")
+    parser.add_argument(
+        "post",
+        type=Path,
+        nargs="?",
+        help="Optional Markdown post file (legacy single-post mode); omit to reconcile all posts-src/ files",
+    )
     parser.add_argument("--root", type=Path, default=Path.cwd(), help="Site repository root (default: current directory)")
     parser.add_argument("--update", action="store_true", help="Allow replacing an existing post with the same slug")
     args = parser.parse_args()
@@ -341,6 +543,10 @@ def main() -> int:
     if sys.version_info < (3, 9):
         fail("Python 3.9 or newer is required.")
     root = args.root.resolve()
+    if args.post is None:
+        sync_posts(root)
+        return 0
+
     source = args.post.resolve()
     meta, body = parse_post(source)
     article = root / "posts" / f"{meta['slug']}.html"
@@ -355,6 +561,9 @@ def main() -> int:
     # Validate both XML inputs before changing any site files.
     ET.parse(root / "sitemap.xml")
     ET.parse(root / "feed.xml")
+
+    manifest = root / "tools" / "published-posts.json"
+    published_slugs = read_published_slugs(manifest)
 
     article.parent.mkdir(parents=True, exist_ok=True)
     article.write_text(article_html(meta, body), encoding="utf-8")
@@ -376,6 +585,12 @@ def main() -> int:
             destination = staging / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(source_file.read_text(encoding="utf-8"), encoding="utf-8")
+
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(
+        json.dumps(sorted(published_slugs | {meta["slug"]}), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     print("Published files updated:")
     print(f"  posts/{meta['slug']}.html")
