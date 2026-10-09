@@ -227,7 +227,7 @@ def article_html(meta: dict[str, str], body: str) -> str:
       <section class="legal-card">
         <h2>More TeraBox guides</h2>
         <div class="guide-grid">
-          <a class="guide-card" href="/posts"><strong>All posts</strong><span>Browse the site's movie and video guides.</span></a>
+          <a class="guide-card" href="/posts"><strong>All posts</strong><span>Browse the site's TeraBox video guides.</span></a>
           <a class="guide-card" href="/terabox-guide"><strong>Open a shared link</strong><span>Learn how to open a shared TeraBox folder safely.</span></a>
           <a class="guide-card" href="/safety-guide"><strong>Stay safe</strong><span>Read the shared-link safety guide.</span></a>
         </div>
