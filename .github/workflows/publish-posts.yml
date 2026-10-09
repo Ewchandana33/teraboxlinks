@@ -34,21 +34,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Generate posts, index, sitemap, and RSS feed
+      - name: Reconcile posts, index, sitemap, RSS feed, and mirrors
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          posts=(posts-src/*.md)
-          if ((${#posts[@]} == 0)); then
-            echo "No Markdown posts found in posts-src/; nothing to publish."
-            exit 0
-          fi
-
-          for post in "${posts[@]}"; do
-            python tools/publish_post.py --root "$GITHUB_WORKSPACE" --update "$post"
-          done
-
+          python tools/publish_post.py --root "$GITHUB_WORKSPACE"
           git diff --check
 
       - name: Commit generated site files
@@ -57,7 +47,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- posts sitemap.xml feed.xml
+          git add -A -- posts sitemap.xml feed.xml tools/published-posts.json
           if [[ -d site-files ]]; then
             git add -A -- site-files
           fi
