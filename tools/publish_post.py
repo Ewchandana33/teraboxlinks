@@ -58,6 +58,8 @@ def parse_post(source: Path) -> tuple[dict[str, str], str]:
         fail("Missing required field(s): " + ", ".join(missing))
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", metadata["slug"]):
         fail("Slug must use lowercase English letters, numbers, and hyphens.")
+    if source.stem != metadata["slug"]:
+        fail(f"Markdown filename must match the slug: {metadata['slug']}.md")
     try:
         dt.date.fromisoformat(metadata["date"])
     except ValueError:
@@ -268,12 +270,18 @@ def update_sitemap(path: Path, slug: str, date: str) -> None:
     tree = ET.parse(path)
     root = tree.getroot()
     target = f"{SITE}/posts/{slug}"
+    posts_index = f"{SITE}/posts"
     found = None
     for entry in root.findall(f"{{{SITEMAP_NS}}}url"):
         loc = entry.find(f"{{{SITEMAP_NS}}}loc")
+        if loc is not None and loc.text == posts_index:
+            lastmod = entry.find(f"{{{SITEMAP_NS}}}lastmod")
+            if lastmod is None:
+                lastmod = ET.SubElement(entry, f"{{{SITEMAP_NS}}}lastmod")
+            if not lastmod.text or lastmod.text < date:
+                lastmod.text = date
         if loc is not None and loc.text == target:
             found = entry
-            break
     if found is None:
         found = ET.SubElement(root, f"{{{SITEMAP_NS}}}url")
         ET.SubElement(found, f"{{{SITEMAP_NS}}}loc").text = target
