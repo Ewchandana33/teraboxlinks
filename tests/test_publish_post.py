@@ -172,6 +172,16 @@ class PublishReconciliationTests(unittest.TestCase):
             "s": "http://www.sitemaps.org/schemas/sitemap/0.9",
             "image": "http://www.google.com/schemas/sitemap-image/1.1",
         }
+        posts_index_url = next(
+            entry
+            for entry in sitemap_root.findall("s:url", namespaces)
+            if entry.findtext("s:loc", namespaces=namespaces)
+            == "https://teraboxlinks.pages.dev/posts"
+        )
+        self.assertEqual(
+            posts_index_url.findtext("s:lastmod", namespaces=namespaces),
+            "2026-10-10",
+        )
         post_url = next(
             entry
             for entry in sitemap_root.findall("s:url", namespaces)
