@@ -132,6 +132,56 @@ class PublishReconciliationTests(unittest.TestCase):
             json.loads((self.root / "tools" / "published-posts.json").read_text()), []
         )
 
+    def test_renaming_source_removes_old_slug_everywhere_and_publishes_new_slug(self) -> None:
+        (self.root / "posts-src" / "active-post.md").unlink()
+        (self.root / "posts-src" / "new-post.md").write_text(
+            markdown("new-post"), encoding="utf-8"
+        )
+
+        self.run_sync()
+
+        for path in (
+            self.root / "posts" / "active-post.html",
+            self.root / "site-files" / "posts" / "active-post.html",
+        ):
+            self.assertFalse(path.exists(), path)
+        for output in (
+            "posts/new-post.html",
+            "site-files/posts/new-post.html",
+        ):
+            self.assertTrue((self.root / output).exists(), output)
+        for relative in ("posts/index.html", "feed.xml", "sitemap.xml"):
+            text = (self.root / relative).read_text(encoding="utf-8")
+            self.assertNotIn("/posts/active-post", text, relative)
+            self.assertIn("/posts/new-post", text, relative)
+        self.assertEqual(
+            json.loads((self.root / "tools" / "published-posts.json").read_text()),
+            ["new-post"],
+        )
+
+    def test_reconciliation_is_idempotent(self) -> None:
+        self.run_sync()
+        generated_paths = (
+            "posts/index.html",
+            "posts/active-post.html",
+            "feed.xml",
+            "sitemap.xml",
+            "tools/published-posts.json",
+            "site-files/posts/index.html",
+            "site-files/posts/active-post.html",
+            "site-files/feed.xml",
+            "site-files/sitemap.xml",
+        )
+        first_run = {
+            relative: (self.root / relative).read_bytes()
+            for relative in generated_paths
+        }
+
+        self.run_sync()
+
+        for relative, content in first_run.items():
+            self.assertEqual((self.root / relative).read_bytes(), content, relative)
+
     def test_posts_index_visible_and_structured_dates_advance_with_post_update(self) -> None:
         (self.root / "posts-src" / "active-post.md").write_text(
             markdown("active-post").replace(
