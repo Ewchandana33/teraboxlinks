@@ -86,6 +86,13 @@ def safe_link(url: str) -> bool:
 
 def inline_markdown(text: str) -> str:
     escaped = html.escape(text, quote=False)
+    code_spans: list[str] = []
+
+    def keep_code(match: re.Match[str]) -> str:
+        code_spans.append(f"<code>{match.group(1)}</code>")
+        return f"\x00CODE{len(code_spans) - 1}\x00"
+
+    escaped = re.sub(r"`([^`\n]+)`", keep_code, escaped)
     link_pattern = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 
     def link_replacement(match: re.Match[str]) -> str:
@@ -95,16 +102,37 @@ def inline_markdown(text: str) -> str:
         return f'<a href="{html.escape(url, quote=True)}">{label}</a>'
 
     escaped = link_pattern.sub(link_replacement, escaped)
-    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", escaped)
+    for index, code in enumerate(code_spans):
+        escaped = escaped.replace(f"\x00CODE{index}\x00", code)
     return escaped
+
+
+def heading_id(text: str, used_ids: dict[str, int]) -> str:
+    """Create stable, readable heading anchors without trusting raw HTML."""
+    plain = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    plain = re.sub(r"[`*_~]", "", plain)
+    base = re.sub(r"[^\w]+", "-", html.unescape(plain).casefold()).strip("-")
+    base = base or "section"
+    used_ids[base] = used_ids.get(base, 0) + 1
+    return base if used_ids[base] == 1 else f"{base}-{used_ids[base]}"
+
+
+def split_table_row(line: str) -> list[str]:
+    row = line.strip()
+    if row.startswith("|"):
+        row = row[1:]
+    if row.endswith("|"):
+        row = row[:-1]
+    return [cell.strip() for cell in row.split("|")]
 
 
 def render_markdown(markdown: str) -> str:
     output: list[str] = []
     paragraph: list[str] = []
     list_kind: str | None = None
+    used_ids: dict[str, int] = {}
 
     def close_paragraph() -> None:
         if paragraph:
@@ -117,20 +145,121 @@ def render_markdown(markdown: str) -> str:
             output.append(f"</{list_kind}>")
             list_kind = None
 
-    for line in markdown.splitlines():
+    def is_table_separator(line: str, columns: int) -> bool:
+        cells = split_table_row(line)
+        return len(cells) == columns and all(
+            re.fullmatch(r":?-{3,}:?", cell) for cell in cells
+        )
+
+    lines = markdown.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index]
         stripped = line.strip()
         if not stripped:
             close_paragraph()
             close_list()
+            index += 1
             continue
-        heading = re.match(r"^(#{2,3})\s+(.+)$", stripped)
+
+        fence = re.match(r"^(`{3,}|~{3,})([A-Za-z0-9_-]*)\s*$", stripped)
+        if fence:
+            close_paragraph()
+            close_list()
+            marker = fence.group(1)
+            language = fence.group(2)
+            code_lines = []
+            index += 1
+            closing = re.compile(
+                r"^"
+                + re.escape(marker[0])
+                + "{"
+                + str(len(marker))
+                + r",}\s*$"
+            )
+            while index < len(lines) and not closing.fullmatch(lines[index].strip()):
+                code_lines.append(lines[index])
+                index += 1
+            if index < len(lines):
+                index += 1
+            class_attr = f' class="language-{language}"' if language else ""
+            code = html.escape("\n".join(code_lines), quote=False)
+            output.append(f"<pre><code{class_attr}>{code}</code></pre>")
+            continue
+
+        heading = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", stripped)
         bullet = re.match(r"^[-*]\s+(.+)$", stripped)
         numbered = re.match(r"^\d+[.)]\s+(.+)$", stripped)
         if heading:
             close_paragraph()
             close_list()
-            level = min(len(heading.group(1)), 3)
-            output.append(f"<h{level}>{inline_markdown(heading.group(2))}</h{level}>")
+            # The page title already supplies the article's only h1.
+            level = 2 if len(heading.group(1)) <= 2 else 3
+            text = heading.group(2)
+            anchor = heading_id(text, used_ids)
+            output.append(
+                f'<h{level} id="{html.escape(anchor, quote=True)}">'
+                f"{inline_markdown(text)}</h{level}>"
+            )
+            index += 1
+        elif re.fullmatch(r"(?:-{3,}|\*{3,}|_{3,})", stripped):
+            close_paragraph()
+            close_list()
+            output.append("<hr>")
+            index += 1
+        elif stripped.startswith(">"):
+            close_paragraph()
+            close_list()
+            quote_lines = []
+            while index < len(lines):
+                current = lines[index]
+                if current.strip().startswith(">"):
+                    quote_lines.append(re.sub(r"^\s*>\s?", "", current))
+                    index += 1
+                elif (
+                    not current.strip()
+                    and index + 1 < len(lines)
+                    and lines[index + 1].strip().startswith(">")
+                ):
+                    quote_lines.append("")
+                    index += 1
+                else:
+                    break
+            output.append(
+                "<blockquote>"
+                + render_markdown("\n".join(quote_lines))
+                + "</blockquote>"
+            )
+        elif (
+            index + 1 < len(lines)
+            and "|" in stripped
+            and is_table_separator(lines[index + 1], len(split_table_row(stripped)))
+        ):
+            close_paragraph()
+            close_list()
+            headers = split_table_row(stripped)
+            column_count = len(headers)
+            output.append(
+                '<div class="table-wrap" role="region" '
+                'aria-label="Scrollable table" tabindex="0">'
+                '<table class="data-table">'
+                '<thead><tr>'
+                + "".join(
+                    f'<th scope="col">{inline_markdown(cell)}</th>' for cell in headers
+                )
+                + "</tr></thead><tbody>"
+            )
+            index += 2
+            while index < len(lines) and "|" in lines[index].strip():
+                cells = split_table_row(lines[index])
+                cells = (cells + [""] * column_count)[:column_count]
+                output.append(
+                    "<tr>"
+                    + "".join(f"<td>{inline_markdown(cell)}</td>" for cell in cells)
+                    + "</tr>"
+                )
+                index += 1
+            output.append("</tbody></table></div>")
         elif bullet or numbered:
             close_paragraph()
             kind = "ul" if bullet else "ol"
@@ -140,9 +269,11 @@ def render_markdown(markdown: str) -> str:
                 list_kind = kind
             item = (bullet or numbered).group(1)
             output.append(f"<li>{inline_markdown(item)}</li>")
+            index += 1
         else:
             close_list()
             paragraph.append(stripped)
+            index += 1
     close_paragraph()
     close_list()
     return "\n".join(output)
