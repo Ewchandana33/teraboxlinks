@@ -285,6 +285,74 @@ class PublishReconciliationTests(unittest.TestCase):
             "https://teraboxlinks.pages.dev/posts/active-post",
         )
 
+    def test_starter_template_publishes_headings_links_quotes_and_tables(self) -> None:
+        template = (REPOSITORY / "starter" / "post-template.md").read_text(
+            encoding="utf-8"
+        )
+        template = template.replace(
+            'title: "Primary keyword: clear and useful promise"',
+            'title: "Example topic: a useful guide"',
+        ).replace(
+            'slug: "primary-keyword-clear-useful-promise"',
+            'slug: "example-topic-guide"',
+        ).replace(
+            'description: "A concise, accurate summary of what readers will learn or do. Keep it under 170 characters."',
+            'description: "A concise guide to the example topic and its key steps."',
+        ).replace(
+            'keyword: "primary search phrase"',
+            'keyword: "example topic"',
+        ).replace(
+            'date: "YYYY-MM-DD"',
+            'date: "2026-10-10"',
+        )
+        (self.root / "posts-src" / "example-topic-guide.md").write_text(
+            template, encoding="utf-8"
+        )
+
+        self.run_sync()
+
+        article = (self.root / "posts" / "example-topic-guide.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('<h2 id="what-readers-need-to-know">', article)
+        self.assertIn('<h3 id="what-if-the-information-changes">', article)
+        self.assertIn('<a href="/terabox-guide">setup guide</a>', article)
+        self.assertIn("<blockquote>", article)
+        self.assertIn(
+            '<pre><code class="language-text">Add a verified example here</code></pre>',
+            article,
+        )
+        self.assertIn('<table class="data-table">', article)
+        self.assertIn('href="/troubleshooting"', article)
+        self.assertEqual(article.count("<h1>"), 1)
+
+    def test_fenced_code_is_escaped_and_unsafe_links_are_not_rendered(self) -> None:
+        source = self.root / "posts-src" / "active-post.md"
+        post = markdown("active-post").replace(
+            "Content for active-post.",
+            """A safe [guide](/terabox-guide) and [unsafe link](javascript:alert).
+
+```html
+<script>alert("not executable")</script>
+```
+
+<img src=x onerror=alert(1)>""",
+        )
+        source.write_text(post, encoding="utf-8")
+
+        self.run_sync()
+
+        article = (self.root / "posts" / "active-post.html").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('<a href="/terabox-guide">guide</a>', article)
+        self.assertIn("unsafe link", article)
+        self.assertNotIn('href="javascript:', article)
+        self.assertIn('<pre><code class="language-html">', article)
+        self.assertIn('&lt;script&gt;alert("not executable")&lt;/script&gt;', article)
+        self.assertIn("&lt;img src=x onerror=alert(1)&gt;", article)
+        self.assertNotIn("<img src=x onerror=alert(1)>", article)
+
     def test_existing_movie_article_has_social_alt_and_publisher_logo(self) -> None:
         article = (REPOSITORY / "posts" / "terabox-movie.html").read_text(
             encoding="utf-8"
