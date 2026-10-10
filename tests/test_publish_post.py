@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -129,6 +130,70 @@ class PublishReconciliationTests(unittest.TestCase):
         self.assertEqual(
             json.loads((self.root / "tools" / "published-posts.json").read_text()), []
         )
+
+    def test_generated_article_has_complete_schema_and_semantic_heading(self) -> None:
+        self.run_sync()
+        article = (self.root / "posts" / "active-post.html").read_text(encoding="utf-8")
+        article_start = article.index('<article class="post-article">')
+        article_end = article.index("</article>", article_start)
+        self.assertIn("<h1>Active Post</h1>", article[article_start:article_end])
+        self.assertIn('property="og:image:alt"', article)
+        self.assertIn('name="twitter:image:alt"', article)
+
+        script = re.search(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            article,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(script)
+        schema = json.loads(script.group(1))
+        graph = schema["@graph"]
+        posting = next(item for item in graph if item["@type"] == "BlogPosting")
+        breadcrumb = next(item for item in graph if item["@type"] == "BreadcrumbList")
+        self.assertEqual(
+            posting["publisher"]["logo"]["url"],
+            "https://teraboxlinks.pages.dev/public/images/logo.webp",
+        )
+        self.assertEqual(
+            posting["image"],
+            "https://teraboxlinks.pages.dev/public/images/banner.jpg",
+        )
+        self.assertEqual(
+            [item["position"] for item in breadcrumb["itemListElement"]],
+            [1, 2, 3],
+        )
+        self.assertEqual(
+            breadcrumb["itemListElement"][-1]["item"],
+            "https://teraboxlinks.pages.dev/posts/active-post",
+        )
+
+    def test_existing_movie_article_has_social_alt_and_publisher_logo(self) -> None:
+        article = (REPOSITORY / "posts" / "terabox-movie.html").read_text(
+            encoding="utf-8"
+        )
+        script = re.search(
+            r'<script type="application/ld\+json">\s*(.*?)\s*</script>',
+            article,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(script)
+        schema = json.loads(script.group(1))
+        posting = next(
+            item for item in schema["@graph"] if item["@type"] == "BlogPosting"
+        )
+        breadcrumb = next(
+            item for item in schema["@graph"] if item["@type"] == "BreadcrumbList"
+        )
+        self.assertIn('property="og:image:alt"', article)
+        self.assertIn('name="twitter:image:alt"', article)
+        self.assertTrue(posting["publisher"]["logo"]["url"].endswith("/logo.webp"))
+        self.assertEqual(
+            [item["position"] for item in breadcrumb["itemListElement"]],
+            [1, 2, 3, 4],
+        )
+        article_start = article.index('<article class="post-article">')
+        article_end = article.index("</article>", article_start)
+        self.assertIn("<h1>", article[article_start:article_end])
 
 
 if __name__ == "__main__":
