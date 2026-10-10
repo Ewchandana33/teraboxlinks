@@ -131,6 +131,45 @@ class PublishReconciliationTests(unittest.TestCase):
             json.loads((self.root / "tools" / "published-posts.json").read_text()), []
         )
 
+    def test_posts_index_visible_and_structured_dates_advance_with_post_update(self) -> None:
+        (self.root / "posts-src" / "active-post.md").write_text(
+            markdown("active-post").replace(
+                'date: "2026-10-08"', 'date: "2026-10-10"'
+            ),
+            encoding="utf-8",
+        )
+        (self.root / "posts" / "index.html").write_text(
+            """<script type="application/ld+json">
+{"@graph":[{"datePublished":"2026-10-08","dateModified":"2026-10-09"}]}
+</script>
+<span class="updated-date">Updated: October 9, 2026</span>
+<div class="guide-grid">
+<a class="guide-card" href="/posts/active-post">Old active card</a>
+</div>
+""",
+            encoding="utf-8",
+        )
+        (self.root / "sitemap.xml").write_text(
+            """<?xml version="1.0"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<url><loc>https://teraboxlinks.pages.dev/posts</loc><lastmod>2026-10-09</lastmod></url>
+<url><loc>https://teraboxlinks.pages.dev/posts/active-post</loc><lastmod>2026-10-08</lastmod></url>
+</urlset>
+""",
+            encoding="utf-8",
+        )
+
+        self.run_sync()
+
+        index = (self.root / "posts" / "index.html").read_text(encoding="utf-8")
+        self.assertIn('"dateModified":"2026-10-10"', index)
+        self.assertIn("Updated: October 10, 2026", index)
+        sitemap = (self.root / "sitemap.xml").read_text(encoding="utf-8")
+        self.assertIn(
+            "<loc>https://teraboxlinks.pages.dev/posts</loc><lastmod>2026-10-10</lastmod>",
+            sitemap,
+        )
+
     def test_generated_article_has_complete_schema_and_semantic_heading(self) -> None:
         self.run_sync()
         article = (self.root / "posts" / "active-post.html").read_text(encoding="utf-8")
