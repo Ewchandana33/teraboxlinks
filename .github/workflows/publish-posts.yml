@@ -35,32 +35,52 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run post publishing tests
-        run: python -m unittest discover -s tests -v
-
-      - name: Reconcile posts, index, sitemap, RSS feed, and mirrors
-        shell: bash
-        run: |
-          set -euo pipefail
-          python tools/publish_post.py --root "$GITHUB_WORKSPACE"
-          git diff --check
-
-      - name: Commit generated site files
+      - name: Test, reconcile, and publish generated files
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A -- posts sitemap.xml feed.xml tools/published-posts.json
-          if [[ -d site-files ]]; then
-            git add -A -- site-files
-          fi
-          if git diff --cached --quiet; then
-            echo "Generated files are already up to date."
-            exit 0
-          fi
-          git commit -m "chore(posts): publish Markdown source updates"
-          if ! git push origin "HEAD:${GITHUB_REF_NAME}"; then
-            echo "::error::Could not push generated files. Check Actions write permission and main branch rules."
-            exit 1
-          fi
+
+          # A queued run may start from an older push SHA after an earlier
+          # publishing run has already added its generated commit.
+          git fetch origin "$GITHUB_REF_NAME"
+          git reset --hard FETCH_HEAD
+
+          max_attempts=5
+          for attempt in $(seq 1 "$max_attempts"); do
+            python -m unittest discover -s tests -v
+            python tools/publish_post.py --root "$GITHUB_WORKSPACE"
+            git diff --check
+
+            git add -A -- posts sitemap.xml feed.xml tools/published-posts.json
+            if [[ -d site-files ]]; then
+              git add -A -- site-files
+            fi
+            if git diff --cached --quiet; then
+              echo "Generated files are already up to date."
+              exit 0
+            fi
+
+            base_sha="$(git rev-parse HEAD)"
+            git commit -m "chore(posts): publish Markdown source updates"
+            if push_output="$(git push origin "HEAD:${GITHUB_REF_NAME}" 2>&1)"; then
+              printf '%s\n' "$push_output"
+              exit 0
+            fi
+            printf '%s\n' "$push_output"
+
+            git fetch origin "$GITHUB_REF_NAME"
+            remote_sha="$(git rev-parse FETCH_HEAD)"
+            if [[ "$remote_sha" == "$base_sha" ]]; then
+              echo "::error::The branch did not advance; check Actions write permission and main branch rules."
+              exit 1
+            fi
+
+            git reset --hard "$remote_sha"
+            if [[ "$attempt" -eq "$max_attempts" ]]; then
+              echo "::error::The branch kept changing; rerun the Publish posts workflow."
+              exit 1
+            fi
+            echo "Branch advanced during publishing; retrying against the latest main commit (attempt $((attempt + 1))/$max_attempts)."
+          done
