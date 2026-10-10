@@ -17,9 +17,11 @@ from urllib.parse import urlsplit
 
 SITE = "https://teraboxlinks.pages.dev"
 SITEMAP_NS = "http://www.sitemaps.org/schemas/sitemap/0.9"
+IMAGE_NS = "http://www.google.com/schemas/sitemap-image/1.1"
 ATOM_NS = "http://www.w3.org/2005/Atom"
+POST_IMAGE_URL = f"{SITE}/public/images/banner.jpg"
 ET.register_namespace("", SITEMAP_NS)
-ET.register_namespace("image", "http://www.google.com/schemas/sitemap-image/1.1")
+ET.register_namespace("image", IMAGE_NS)
 ET.register_namespace("atom", ATOM_NS)
 
 
@@ -153,7 +155,7 @@ def article_html(meta: dict[str, str], body: str) -> str:
     url = f"{SITE}/posts/{slug}"
     date = meta["date"]
     language = html.escape(meta["language"], quote=True)
-    image_url = f"{SITE}/public/images/banner.jpg"
+    image_url = POST_IMAGE_URL
     image_alt = "TeraBox shared-video bundle directory banner"
     structured = {
         "@context": "https://schema.org",
@@ -238,7 +240,7 @@ def article_html(meta: dict[str, str], body: str) -> str:
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{title}">
   <meta name="twitter:description" content="{description}">
-  <meta name="twitter:image" content="{SITE}/public/images/banner.jpg">
+  <meta name="twitter:image" content="{image_url}">
    <meta name="twitter:image:alt" content="{html.escape(image_alt, quote=True)}">
   <link rel="stylesheet" href="/legal.css">
   <script type="application/ld+json">{schema}</script>
@@ -315,7 +317,13 @@ def update_index(path: Path, meta: dict[str, str]) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def update_sitemap(path: Path, slug: str, date: str) -> None:
+def write_sitemap(tree: ET.ElementTree, path: Path) -> None:
+    """Write a consistently indented sitemap for people and tooling."""
+    ET.indent(tree, space="  ")
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+
+
+def update_sitemap(path: Path, slug: str, date: str, title: str) -> None:
     tree = ET.parse(path)
     root = tree.getroot()
     target = f"{SITE}/posts/{slug}"
@@ -340,7 +348,13 @@ def update_sitemap(path: Path, slug: str, date: str) -> None:
         if lastmod is None:
             lastmod = ET.SubElement(found, f"{{{SITEMAP_NS}}}lastmod")
         lastmod.text = date
-    tree.write(path, encoding="utf-8", xml_declaration=True)
+
+    for image in found.findall(f"{{{IMAGE_NS}}}image"):
+        found.remove(image)
+    image = ET.SubElement(found, f"{{{IMAGE_NS}}}image")
+    ET.SubElement(image, f"{{{IMAGE_NS}}}loc").text = POST_IMAGE_URL
+    ET.SubElement(image, f"{{{IMAGE_NS}}}title").text = title
+    write_sitemap(tree, path)
 
 
 def update_feed(path: Path, meta: dict[str, str]) -> None:
@@ -375,7 +389,7 @@ def update_feed(path: Path, meta: dict[str, str]) -> None:
     ET.SubElement(item, "guid", {"isPermaLink": "true"}).text = link
     ET.SubElement(item, "pubDate").text = pub_date_text
     ET.SubElement(item, "description").text = meta["description"]
-    tree.write(path, encoding="utf-8", xml_declaration=True)
+    write_sitemap(tree, path)
 
 
 def read_published_slugs(path: Path) -> set[str]:
@@ -579,7 +593,7 @@ def sync_posts(root: Path) -> None:
         article = root / "posts" / f"{slug}.html"
         article.parent.mkdir(parents=True, exist_ok=True)
         article.write_text(article_html(meta, body), encoding="utf-8")
-        update_sitemap(sitemap, slug, meta["date"])
+        update_sitemap(sitemap, slug, meta["date"], meta["title"])
         update_feed(feed, meta)
     refresh_feed_build_date(feed)
 
@@ -653,7 +667,7 @@ def main() -> int:
     article.parent.mkdir(parents=True, exist_ok=True)
     article.write_text(article_html(meta, body), encoding="utf-8")
     update_index(root / "posts" / "index.html", meta)
-    update_sitemap(root / "sitemap.xml", meta["slug"], meta["date"])
+    update_sitemap(root / "sitemap.xml", meta["slug"], meta["date"], meta["title"])
     update_feed(root / "feed.xml", meta)
 
     # The attached project snapshot keeps a staging mirror for copied page files.
