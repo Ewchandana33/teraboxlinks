@@ -434,6 +434,43 @@ def set_index_cards(
     path.write_text(text, encoding="utf-8")
 
 
+def update_index_modified_date(
+    path: Path,
+    posts: dict[str, tuple[dict[str, str], str]],
+) -> None:
+    """Keep the Posts page's visible and structured update dates in sync."""
+    if not posts:
+        return
+
+    text = path.read_text(encoding="utf-8")
+    date_pattern = re.compile(r'("dateModified"\s*:\s*")(\d{4}-\d{2}-\d{2})(")')
+    match = date_pattern.search(text)
+    if not match:
+        return
+
+    existing_date = dt.date.fromisoformat(match.group(2))
+    latest_post_date = max(
+        dt.date.fromisoformat(meta["date"]) for meta, _ in posts.values()
+    )
+    modified_date = max(existing_date, latest_post_date)
+    text = (
+        text[:match.start()]
+        + match.group(1) + modified_date.isoformat() + match.group(3)
+        + text[match.end():]
+    )
+
+    visible_date = re.compile(
+        r'(<span class="updated-date">Updated: )[^<]*(</span>)'
+    )
+    label = f"{modified_date.strftime('%B')} {modified_date.day}, {modified_date.year}"
+    text = visible_date.sub(
+        lambda item: item.group(1) + label + item.group(2),
+        text,
+        count=1,
+    )
+    path.write_text(text, encoding="utf-8")
+
+
 def remove_sitemap_entries(path: Path, slugs: set[str]) -> None:
     if not slugs:
         return
@@ -533,6 +570,7 @@ def sync_posts(root: Path) -> None:
     # Remove all previously managed cards/items/URLs first, then re-add the
     # complete current source set. Unrelated hand-authored content is retained.
     set_index_cards(index, posts, managed_slugs)
+    update_index_modified_date(index, posts)
     remove_sitemap_entries(sitemap, managed_slugs)
     remove_feed_items(feed, managed_slugs)
 
