@@ -153,20 +153,63 @@ def article_html(meta: dict[str, str], body: str) -> str:
     url = f"{SITE}/posts/{slug}"
     date = meta["date"]
     language = html.escape(meta["language"], quote=True)
-    keywords = json.dumps([meta["keyword"]], ensure_ascii=False).replace("</", "<\\/")
+    image_url = f"{SITE}/public/images/banner.jpg"
+    image_alt = "TeraBox shared-video bundle directory banner"
     structured = {
         "@context": "https://schema.org",
-        "@type": "BlogPosting",
-        "headline": meta["title"],
-        "description": meta["description"],
-        "url": url,
-        "mainEntityOfPage": url,
-        "datePublished": date,
-        "dateModified": date,
-        "inLanguage": meta["language"],
-        "keywords": [meta["keyword"]],
-        "author": {"@type": "Organization", "name": "terabox video link", "url": SITE + "/"},
-        "publisher": {"@type": "Organization", "name": "terabox video link", "url": SITE + "/"},
+        "@graph": [
+            {
+                "@type": "BlogPosting",
+                "@id": f"{url}#article",
+                "headline": meta["title"],
+                "description": meta["description"],
+                "url": url,
+                "mainEntityOfPage": {"@type": "WebPage", "@id": url},
+                "datePublished": date,
+                "dateModified": date,
+                "inLanguage": meta["language"],
+                "image": image_url,
+                "keywords": [meta["keyword"]],
+                "author": {
+                    "@type": "Organization",
+                    "name": "terabox video link",
+                    "url": SITE + "/",
+                },
+                "publisher": {
+                    "@type": "Organization",
+                    "name": "terabox video link",
+                    "url": SITE + "/",
+                    "logo": {
+                        "@type": "ImageObject",
+                        "url": f"{SITE}/public/images/logo.webp",
+                    },
+                },
+            },
+            {
+                "@type": "BreadcrumbList",
+                "@id": f"{url}#breadcrumb",
+                "itemListElement": [
+                    {
+                        "@type": "ListItem",
+                        "position": 1,
+                        "name": "Home",
+                        "item": SITE + "/",
+                    },
+                    {
+                        "@type": "ListItem",
+                        "position": 2,
+                        "name": "Posts",
+                        "item": f"{SITE}/posts",
+                    },
+                    {
+                        "@type": "ListItem",
+                        "position": 3,
+                        "name": meta["title"],
+                        "item": url,
+                    },
+                ],
+            },
+        ],
     }
     schema = json.dumps(structured, ensure_ascii=False, indent=2).replace("</", "<\\/")
     content = render_markdown(body)
@@ -190,17 +233,20 @@ def article_html(meta: dict[str, str], body: str) -> str:
   <meta property="og:title" content="{title}">
   <meta property="og:description" content="{description}">
   <meta property="og:url" content="{url}">
-  <meta property="og:image" content="{SITE}/public/images/banner.jpg">
+   <meta property="og:image" content="{image_url}">
+   <meta property="og:image:alt" content="{html.escape(image_alt, quote=True)}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{title}">
   <meta name="twitter:description" content="{description}">
   <meta name="twitter:image" content="{SITE}/public/images/banner.jpg">
+   <meta name="twitter:image:alt" content="{html.escape(image_alt, quote=True)}">
   <link rel="stylesheet" href="/legal.css">
   <script type="application/ld+json">{schema}</script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to content</a>
   <main class="legal-shell" id="main-content">
+    <article class="post-article">
     <header class="legal-header">
       <a class="brand-link" href="/">
         <span class="brand-logo"><img src="/public/images/logo.webp" width="72" height="72" alt=""></span>
@@ -217,9 +263,9 @@ def article_html(meta: dict[str, str], body: str) -> str:
       <li><a href="/">Home</a></li><li><a href="/posts">Posts</a></li><li><span aria-current="page">{title}</span></li>
     </ol></nav>
     <div class="legal-content">
-      <article class="legal-card">
+      <div class="legal-card">
         {content}
-      </article>
+      </div>
       <section class="legal-card">
         <h2>Browse TeraBox video bundles</h2>
         <p>Visit the homepage to see the available video bundles. Check each shared folder for its current contents and only access material you are authorized to use.</p>
@@ -235,6 +281,7 @@ def article_html(meta: dict[str, str], body: str) -> str:
         </div>
       </section>
     </div>
+    </article>
     <footer class="legal-footer">
       <nav class="footer-links" aria-label="Explore guides"><a href="/">Home</a><a href="/posts">Posts</a><a href="/guides">All guides</a><a href="/contact">Contact</a></nav>
       <p>&copy; 2026 terabox video link.</p>
