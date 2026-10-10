@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -164,11 +165,29 @@ class PublishReconciliationTests(unittest.TestCase):
         index = (self.root / "posts" / "index.html").read_text(encoding="utf-8")
         self.assertIn('"dateModified":"2026-10-10"', index)
         self.assertIn("Updated: October 10, 2026", index)
-        sitemap = (self.root / "sitemap.xml").read_text(encoding="utf-8")
-        self.assertIn(
-            "<loc>https://teraboxlinks.pages.dev/posts</loc><lastmod>2026-10-10</lastmod>",
-            sitemap,
+        sitemap_path = self.root / "sitemap.xml"
+        sitemap_text = sitemap_path.read_text(encoding="utf-8")
+        sitemap_root = ET.parse(sitemap_path).getroot()
+        namespaces = {
+            "s": "http://www.sitemaps.org/schemas/sitemap/0.9",
+            "image": "http://www.google.com/schemas/sitemap-image/1.1",
+        }
+        post_url = next(
+            entry
+            for entry in sitemap_root.findall("s:url", namespaces)
+            if entry.findtext("s:loc", namespaces=namespaces)
+            == "https://teraboxlinks.pages.dev/posts/active-post"
         )
+        self.assertEqual(post_url.findtext("s:lastmod", namespaces=namespaces), "2026-10-10")
+        image = post_url.find("image:image", namespaces)
+        self.assertIsNotNone(image)
+        self.assertEqual(
+            image.findtext("image:loc", namespaces=namespaces),
+            "https://teraboxlinks.pages.dev/public/images/banner.jpg",
+        )
+        self.assertEqual(image.findtext("image:title", namespaces=namespaces), "Active Post")
+        self.assertIn("\n  <url>\n", sitemap_text)
+        self.assertNotIn("</url><url>", sitemap_text)
 
     def test_generated_article_has_complete_schema_and_semantic_heading(self) -> None:
         self.run_sync()
