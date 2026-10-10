@@ -553,6 +553,44 @@ a:hover {
     border-radius: 6px;
     font-size: 0.86em;
 }
+.legal-card pre {
+    margin: 16px 0 0;
+    padding: 16px;
+    overflow-x: auto;
+    color: var(--text-soft);
+    background: #080808;
+    border: 1px solid #2c2c2c;
+    border-radius: 14px;
+    font-size: 0.86rem;
+    line-height: 1.55;
+    tab-size: 2;
+}
+.legal-card pre code {
+    display: block;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    font-size: inherit;
+    white-space: pre;
+}
+.legal-card blockquote {
+    margin: 18px 0 0;
+    padding: 14px 16px;
+    color: var(--text-soft);
+    background: #101010;
+    border: 1px solid #333333;
+    border-left: 3px solid var(--red);
+    border-radius: 14px;
+    font-size: 0.9rem;
+}
+.legal-card blockquote > :first-child {
+    margin-top: 0;
+}
+.legal-card blockquote > :last-child {
+    margin-bottom: 0;
+}
 .callout {
     margin-top: 18px;
     padding: 14px 16px;
