@@ -342,7 +342,7 @@ function createMoreLinksInterface() {
                         class="extra-dialog-play"
                         href="https://play.google.com/store/apps/details?id=com.dubox.drive"
                         target="_blank"
-                        rel="noopener noreferrer external"
+                        rel="noopener noreferrer external nofollow"
                         aria-label="Download the official TeraBox app on Google Play (opens in a new tab)"
                     >
                         <span class="extra-dialog-play-icon" aria-hidden="true">
