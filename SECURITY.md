@@ -16,38 +16,15 @@ Security problems may include:
 - unsafe third-party content;
 - a vulnerability in the website code or workflow.
 
-### Private reports
+### Reporting contact
 
-If private vulnerability reporting is enabled for this repository, use the
-repository's **Security** tab and select **Report a vulnerability**.
-
-Repository security page:
-
-https://github.com/Ewchandana33/teraboxlinks/security
-
-### Public issue warning
-
-GitHub issues are public. Do not include:
-
-- passwords or access tokens;
-- private email addresses or telephone numbers;
-- identity documents;
-- private residential addresses;
-- exploit instructions;
-- confidential evidence;
-- personal information belonging to another person.
-
-If private reporting is unavailable, open a public issue containing only:
-
-- the affected public page URL;
-- the affected bundle number;
-- a short non-sensitive description;
-- a request for a private communication method.
-
-Issue page:
-
-
-[https://github.com/Ewchandana33/teraboxlinks/issues/new](https://github.com/Ewchandana33/teraboxlinks/issues/new)
+Email security concerns to [www.terabox.us@gmail.com](mailto:www.terabox.us@gmail.com)
+with a brief, non-sensitive description and the affected public page URL.
+Do not send passwords, access tokens, identity documents, private addresses,
+confidential evidence, or personal information belonging to another person.
+If more detail is needed, request a secure communication method before
+sharing sensitive material. GitHub Issues are currently unavailable for this
+repository.
 
 ## Malicious or Illegal External Material
 
@@ -58,7 +35,8 @@ If an external destination contains malicious, illegal, infringing,
 non-consensual, exploitative or underage material:
 
 1. Do not download, copy or redistribute it.
-2. Report the affected link to this repository.
+2. Email the site operator at the address above with the affected page URL and
+   a short description.
 3. Report the material to the external hosting provider.
 4. Contact the appropriate authorities where required.
 
