@@ -238,6 +238,12 @@ a:hover {
     font-size: 0.74rem;
     font-weight: 800;
 }
+.reading-time {
+    display: inline-block;
+    margin: 16px 0 0 8px;
+    color: var(--text-soft);
+    font-size: 0.78rem;
+}
 .legal-navigation {
     display: flex;
     flex-wrap: wrap;
@@ -590,6 +596,38 @@ a:hover {
 }
 .legal-card blockquote > :last-child {
     margin-bottom: 0;
+}
+.legal-card .quick-answer-box,
+.legal-card .key-takeaways {
+    margin: 18px 0;
+    padding: 14px 16px;
+    color: var(--text-soft);
+    background: #101010;
+    border: 1px solid #333333;
+    border-left: 3px solid var(--red);
+    border-radius: 14px;
+}
+.legal-card .quick-answer-box > :first-child,
+.legal-card .key-takeaways > :first-child {
+    margin-top: 0;
+}
+.legal-card .quick-answer-box > :last-child,
+.legal-card .key-takeaways > :last-child {
+    margin-bottom: 0;
+}
+.legal-card .post-cover {
+    margin: 0 0 20px;
+}
+.legal-card .post-cover img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border-radius: 14px;
+}
+.legal-card .post-cover figcaption {
+    margin-top: 8px;
+    color: var(--text-soft);
+    font-size: 0.8rem;
 }
 .callout {
     margin-top: 18px;
