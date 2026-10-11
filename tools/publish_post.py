@@ -11,8 +11,11 @@ import json
 import re
 import sys
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
 from pathlib import Path
 from urllib.parse import urlsplit
+
+import yaml
 
 
 SITE = "https://teraboxlinks.pages.dev"
@@ -29,7 +32,87 @@ def fail(message: str) -> "NoReturn":
     raise SystemExit(f"Error: {message}")
 
 
-def parse_post(source: Path) -> tuple[dict[str, str], str]:
+SUPPORTED_FRONTMATTER = {
+    "title", "slug", "description", "keyword", "date", "language",
+    "secondary_keywords", "entities", "category", "tags", "cluster_topic",
+    "parent_post_url", "breadcrumbs", "last_updated", "review_frequency",
+    "author", "reviewed_by", "canonical_url", "original_research_data",
+    "tested_environment", "code_sandbox_url", "testing_methodology",
+    "cover_image", "cover_alt", "cover_caption", "og_type",
+    "social_share_image", "draft", "noindex", "schema_type",
+    "target_audience", "word_count", "reading_time", "is_featured",
+    "content_status", "google_bot", "ai_summary_enabled",
+    "speakable_selector", "citations", "faqs", "destination_url",
+    "cta_text",
+}
+
+
+class UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate keys instead of silently overriding."""
+
+
+def _construct_unique_mapping(
+    loader: UniqueKeyLoader, node: yaml.MappingNode, deep: bool = False
+) -> dict:
+    loader.flatten_mapping(node)
+    result = {}
+    for key_node, value_node in node.value:
+        key = loader.construct_object(key_node, deep=deep)
+        if key in result:
+            raise yaml.constructor.ConstructorError(
+                "while constructing post front matter",
+                node.start_mark,
+                f"duplicate key {key!r}",
+                key_node.start_mark,
+            )
+        result[key] = loader.construct_object(value_node, deep=deep)
+    return result
+
+
+UniqueKeyLoader.add_constructor(
+    yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _construct_unique_mapping
+)
+
+
+def _plain_text(value: object, field: str) -> str:
+    if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+        fail(f"'{field}' must be a plain text value.")
+    return str(value).strip()
+
+
+def _string_list(value: object, field: str) -> list[str]:
+    if value is None:
+        return []
+    values = value if isinstance(value, list) else [value]
+    if any(not isinstance(item, str) or not item.strip() for item in values):
+        fail(f"'{field}' must be a text value or a list of non-empty text values.")
+    return [item.strip() for item in values]
+
+
+def _normalise_date(value: object, field: str) -> str:
+    if isinstance(value, dt.datetime):
+        return value.date().isoformat()
+    if isinstance(value, dt.date):
+        return value.isoformat()
+    if not isinstance(value, str):
+        fail(f"'{field}' must be a date such as 2026-10-11 or an ISO timestamp.")
+    raw = value.strip()
+    try:
+        return dt.date.fromisoformat(raw).isoformat()
+    except ValueError:
+        try:
+            return dt.datetime.fromisoformat(raw.replace("Z", "+00:00")).date().isoformat()
+        except ValueError:
+            fail(f"'{field}' must use YYYY-MM-DD or an ISO-8601 timestamp.")
+
+
+def _require_mapping(value: object, field: str) -> dict:
+    if not isinstance(value, dict) or any(not isinstance(key, str) for key in value):
+        fail(f"'{field}' must be a YAML mapping.")
+    return value
+
+
+def parse_post(source: Path) -> tuple[dict, str]:
     try:
         text = source.read_text(encoding="utf-8")
     except OSError as exc:
@@ -42,37 +125,126 @@ def parse_post(source: Path) -> tuple[dict[str, str], str]:
     except StopIteration:
         fail("Missing closing --- after post fields.")
 
-    metadata: dict[str, str] = {}
-    for line in lines[1:end]:
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if ":" not in line:
-            fail(f"Invalid post field: {line}")
-        key, value = line.split(":", 1)
-        key = key.strip().lower()
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        metadata[key] = value
+    try:
+        loaded = yaml.load("\n".join(lines[1:end]), Loader=UniqueKeyLoader)
+    except yaml.YAMLError as exc:
+        problem = getattr(exc, "problem", None) or str(exc).splitlines()[0]
+        mark = getattr(exc, "problem_mark", None)
+        location = f" (front-matter line {mark.line + 1})" if mark else ""
+        fail(f"Invalid YAML front matter{location}: {problem}")
+    metadata = _require_mapping(loaded, "front matter")
+    metadata = {str(key).strip().lower(): value for key, value in metadata.items()}
+    unknown = sorted(set(metadata) - SUPPORTED_FRONTMATTER)
+    if unknown:
+        fail(
+            "Unsupported front-matter field(s): "
+            + ", ".join(unknown)
+            + ". Check starter/post-template.md for fields the publisher uses."
+        )
 
     required = ("title", "slug", "description", "keyword", "date")
     missing = [key for key in required if not metadata.get(key)]
     if missing:
         fail("Missing required field(s): " + ", ".join(missing))
+    for field in ("title", "slug", "description"):
+        metadata[field] = _plain_text(metadata[field], field)
+    keywords = _string_list(metadata["keyword"], "keyword")
+    if not keywords:
+        fail("'keyword' must contain at least one search phrase.")
+    metadata["keyword"] = keywords[0]
+    metadata["secondary_keywords"] = _string_list(
+        metadata.get("secondary_keywords"), "secondary_keywords"
+    )
+    metadata["entities"] = _string_list(metadata.get("entities"), "entities")
+    metadata["tags"] = _string_list(metadata.get("tags"), "tags")
+    metadata["keyword_list"] = list(dict.fromkeys(keywords + metadata["secondary_keywords"]))
     if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", metadata["slug"]):
         fail("Slug must use lowercase English letters, numbers, and hyphens.")
     if source.stem != metadata["slug"]:
         fail(f"Markdown filename must match the slug: {metadata['slug']}.md")
-    try:
-        dt.date.fromisoformat(metadata["date"])
-    except ValueError:
-        fail("Date must use YYYY-MM-DD.")
+    metadata["date"] = _normalise_date(metadata["date"], "date")
+    if metadata.get("last_updated") is not None:
+        metadata["last_updated"] = _normalise_date(
+            metadata["last_updated"], "last_updated"
+        )
+    else:
+        metadata["last_updated"] = metadata["date"]
     metadata.setdefault("language", "en")
+    metadata["language"] = _plain_text(metadata["language"], "language")
+    if not re.fullmatch(r"[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", metadata["language"]):
+        fail("'language' must be a BCP-47 language tag such as 'en' or 'si-LK'.")
+    for field in ("category", "cluster_topic", "review_frequency", "tested_environment",
+                  "testing_methodology", "cover_alt", "cover_caption", "og_type",
+                  "target_audience", "reading_time", "content_status", "cta_text"):
+        if metadata.get(field) is not None:
+            metadata[field] = _plain_text(metadata[field], field)
+    metadata["author"] = _require_mapping(metadata.get("author", {}), "author")
+    metadata["reviewed_by"] = _require_mapping(
+        metadata.get("reviewed_by", {}), "reviewed_by"
+    )
+    for field in ("breadcrumbs", "citations", "faqs"):
+        if metadata.get(field) is not None and not isinstance(metadata[field], list):
+            fail(f"'{field}' must be a YAML list.")
+    if metadata.get("google_bot") is not None:
+        metadata["google_bot"] = _require_mapping(metadata["google_bot"], "google_bot")
+    metadata["speakable_selector"] = _string_list(
+        metadata.get("speakable_selector"), "speakable_selector"
+    )
+    if metadata.get("draft") is True:
+        fail("Draft posts cannot be placed in posts-src/; move them to .post-drafts/.")
+    if metadata.get("schema_type") and metadata["schema_type"] not in {
+        "BlogPosting", "Article", "TechArticle", "NewsArticle", "HowTo"
+    }:
+        fail("'schema_type' must be BlogPosting, Article, TechArticle, NewsArticle, or HowTo.")
+    for field in ("canonical_url", "parent_post_url", "destination_url",
+                  "cover_image", "social_share_image", "code_sandbox_url"):
+        if metadata.get(field) is not None:
+            metadata[field] = _plain_text(metadata[field], field)
+            if metadata[field] and not is_web_target(metadata[field]):
+                fail(f"'{field}' must be an HTTP(S) URL or a root-relative site path.")
+    if metadata.get("canonical_url"):
+        canonical = urlsplit(metadata["canonical_url"])
+        if canonical.scheme and canonical.netloc != urlsplit(SITE).netloc:
+            fail("'canonical_url' must point to this site to avoid indexing another domain.")
+    for field in ("noindex", "draft", "original_research_data", "ai_summary_enabled",
+                  "is_featured"):
+        if field in metadata and not isinstance(metadata[field], bool):
+            fail(f"'{field}' must be true or false.")
+    if not isinstance(metadata.get("word_count", 0), int):
+        fail("'word_count' must be an integer; use 0 to have it calculated.")
     body = "\n".join(lines[end + 1:]).strip()
     if not body:
         fail("The post body is empty.")
     if len(metadata["description"]) > 170:
         fail("Description is too long (maximum 170 characters).")
+    for index, item in enumerate(metadata.get("breadcrumbs", []), start=1):
+        crumb = _require_mapping(item, f"breadcrumbs[{index}]")
+        if not crumb.get("name") or not crumb.get("url"):
+            fail(f"breadcrumbs[{index}] needs both 'name' and 'url'.")
+        if not is_web_target(str(crumb["url"])):
+            fail(f"breadcrumbs[{index}].url must be HTTP(S) or root-relative.")
+    for index, item in enumerate(metadata.get("citations", []), start=1):
+        citation = _require_mapping(item, f"citations[{index}]")
+        if not citation.get("title") or not citation.get("url"):
+            fail(f"citations[{index}] needs both 'title' and 'url'.")
+        if not is_web_target(str(citation["url"])):
+            fail(f"citations[{index}].url must use HTTP(S) or a root-relative path.")
+    for index, item in enumerate(metadata.get("faqs", []), start=1):
+        faq = _require_mapping(item, f"faqs[{index}]")
+        if not faq.get("question") or not faq.get("answer"):
+            fail(f"faqs[{index}] needs both 'question' and 'answer'.")
+    for field in ("author", "reviewed_by"):
+        person = metadata[field]
+        if person and not person.get("name"):
+            fail(f"'{field}.name' is required when {field} details are provided.")
+        if person.get("url") and not is_web_target(str(person["url"])):
+            fail(f"'{field}.url' must be HTTP(S) or root-relative.")
+        same_as = person.get("same_as", [])
+        if same_as and (
+            not isinstance(same_as, list)
+            or any(not isinstance(value, str) or not is_web_target(value) for value in same_as)
+        ):
+            fail(f"'{field}.same_as' must be a list of HTTP(S) profile URLs.")
     return metadata, body
 
 
@@ -82,6 +254,14 @@ def safe_link(url: str) -> bool:
         not parts.scheme
         or parts.scheme.lower() in {"http", "https", "mailto"}
     ) and not url.strip().lower().startswith(("javascript:", "data:", "vbscript:"))
+
+
+def is_web_target(url: str) -> bool:
+    value = url.strip()
+    if value.startswith("/") and not value.startswith("//"):
+        return True
+    parts = urlsplit(value)
+    return parts.scheme.lower() in {"http", "https"} and bool(parts.netloc)
 
 
 def inline_markdown(text: str) -> str:
@@ -133,6 +313,7 @@ def render_markdown(markdown: str) -> str:
     paragraph: list[str] = []
     list_kind: str | None = None
     used_ids: dict[str, int] = {}
+    allowed_div_depth = 0
 
     def close_paragraph() -> None:
         if paragraph:
@@ -159,6 +340,33 @@ def render_markdown(markdown: str) -> str:
         if not stripped:
             close_paragraph()
             close_list()
+            index += 1
+            continue
+
+        # Allow only the two known presentation wrappers used by the post
+        # template. All other raw HTML continues to be escaped as text.
+        safe_div = re.fullmatch(
+            r'<div class="(quick-answer-box|key-takeaways)"(?: id="(quick-answer)")?>',
+            stripped,
+        )
+        if safe_div:
+            close_paragraph()
+            close_list()
+            attrs = f' class="{safe_div.group(1)}"'
+            if safe_div.group(2):
+                attrs += f' id="{safe_div.group(2)}"'
+            output.append(f"<div{attrs}>")
+            allowed_div_depth += 1
+            index += 1
+            continue
+        if stripped == "</div>" and allowed_div_depth:
+            close_paragraph()
+            close_list()
+            output.append("</div>")
+            allowed_div_depth -= 1
+            index += 1
+            continue
+        if stripped.startswith("<!--") and stripped.endswith("-->"):
             index += 1
             continue
 
@@ -276,38 +484,104 @@ def render_markdown(markdown: str) -> str:
             index += 1
     close_paragraph()
     close_list()
+    output.extend("</div>" for _ in range(allowed_div_depth))
     return "\n".join(output)
 
 
-def article_html(meta: dict[str, str], body: str) -> str:
+def _site_url(value: str | None, default: str) -> str:
+    if not value:
+        return default
+    value = value.strip()
+    if value.startswith("/") and not value.startswith("//"):
+        return SITE + value
+    parts = urlsplit(value)
+    if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
+        fail(f"Expected an HTTP(S) URL or root-relative site path, got: {value}")
+    return value
+
+
+def _person_schema(person: Mapping, fallback_name: str) -> dict:
+    name = str(person.get("name", fallback_name)).strip()
+    result = {"@type": "Person", "name": name}
+    for source, target in (("url", "url"), ("title", "jobTitle"),
+                           ("experience_summary", "description")):
+        if person.get(source):
+            result[target] = str(person[source]).strip()
+    same_as = person.get("same_as", [])
+    if isinstance(same_as, list) and same_as:
+        result["sameAs"] = [str(item).strip() for item in same_as]
+    return result
+
+
+def article_html(meta: dict, body: str) -> str:
     title = html.escape(meta["title"], quote=True)
     description = html.escape(meta["description"], quote=True)
     slug = meta["slug"]
     url = f"{SITE}/posts/{slug}"
+    canonical_url = _site_url(meta.get("canonical_url"), url)
     date = meta["date"]
+    modified_date = meta.get("last_updated", date)
     language = html.escape(meta["language"], quote=True)
-    image_url = POST_IMAGE_URL
-    image_alt = "TeraBox shared-video bundle directory banner"
+    image_url = _site_url(meta.get("cover_image"), POST_IMAGE_URL)
+    social_image_url = _site_url(meta.get("social_share_image"), image_url)
+    image_alt = meta.get("cover_alt", "TeraBox shared-video bundle directory banner")
+    keywords = list(dict.fromkeys(
+        meta.get("keyword_list", [meta["keyword"]])
+        + meta.get("entities", [])
+        + meta.get("tags", [])
+        + ([meta["category"]] if meta.get("category") else [])
+    ))
+    author = _person_schema(meta["author"], "terabox video link") if meta.get("author") else {
+        "@type": "Organization",
+        "name": "terabox video link",
+        "url": SITE + "/",
+    }
+    breadcrumbs = meta.get("breadcrumbs") or [
+        {"name": "Home", "url": SITE + "/"},
+        {"name": "Posts", "url": f"{SITE}/posts"},
+        {"name": meta["title"], "url": url},
+    ]
+    breadcrumb_items = [
+        {
+            "@type": "ListItem",
+            "position": position,
+            "name": str(item["name"]).strip(),
+            "item": _site_url(str(item["url"]), SITE + "/"),
+        }
+        for position, item in enumerate(breadcrumbs, start=1)
+    ]
+    article_type = meta.get("schema_type", "BlogPosting")
+    word_count = len(re.findall(r"\b[\w'-]+\b", re.sub(r"[#*_`>|]", " ", body)))
+    if meta.get("word_count", 0) <= 0:
+        meta["word_count"] = word_count
+    faq_items = [
+        {
+            "@type": "Question",
+            "name": str(item["question"]).strip(),
+            "acceptedAnswer": {
+                "@type": "Answer",
+                "text": str(item["answer"]).strip(),
+            },
+        }
+        for item in meta.get("faqs", [])
+    ]
     structured = {
         "@context": "https://schema.org",
         "@graph": [
             {
-                "@type": "BlogPosting",
-                "@id": f"{url}#article",
+                "@type": article_type,
+                "@id": f"{canonical_url}#article",
                 "headline": meta["title"],
                 "description": meta["description"],
-                "url": url,
-                "mainEntityOfPage": {"@type": "WebPage", "@id": url},
+                "url": canonical_url,
+                "mainEntityOfPage": {"@type": "WebPage", "@id": canonical_url},
                 "datePublished": date,
-                "dateModified": date,
+                "dateModified": modified_date,
                 "inLanguage": meta["language"],
                 "image": image_url,
-                "keywords": [meta["keyword"]],
-                "author": {
-                    "@type": "Organization",
-                    "name": "terabox video link",
-                    "url": SITE + "/",
-                },
+                "keywords": keywords,
+                "wordCount": meta["word_count"],
+                "author": author,
                 "publisher": {
                     "@type": "Organization",
                     "name": "terabox video link",
@@ -317,35 +591,102 @@ def article_html(meta: dict[str, str], body: str) -> str:
                         "url": f"{SITE}/public/images/logo.webp",
                     },
                 },
+                **({"reviewedBy": _person_schema(meta["reviewed_by"], "")}
+                   if meta.get("reviewed_by") else {}),
+                **({"citation": [
+                    {"@type": "CreativeWork", "name": str(item["title"]),
+                     "url": _site_url(str(item["url"]), SITE + "/")}
+                    for item in meta.get("citations", [])
+                ]} if meta.get("citations") else {}),
+                **({"speakable": {
+                    "@type": "SpeakableSpecification",
+                    "cssSelector": meta["speakable_selector"],
+                }} if meta.get("speakable_selector") else {}),
+                **({"audience": {
+                    "@type": "Audience",
+                    "audienceType": meta["target_audience"],
+                }} if meta.get("target_audience") else {}),
+                **({"isPartOf": {
+                    "@type": "CreativeWork",
+                    "name": meta["cluster_topic"],
+                    "url": _site_url(meta.get("parent_post_url"), SITE + "/"),
+                }} if meta.get("cluster_topic") else {}),
             },
             {
                 "@type": "BreadcrumbList",
-                "@id": f"{url}#breadcrumb",
-                "itemListElement": [
-                    {
-                        "@type": "ListItem",
-                        "position": 1,
-                        "name": "Home",
-                        "item": SITE + "/",
-                    },
-                    {
-                        "@type": "ListItem",
-                        "position": 2,
-                        "name": "Posts",
-                        "item": f"{SITE}/posts",
-                    },
-                    {
-                        "@type": "ListItem",
-                        "position": 3,
-                        "name": meta["title"],
-                        "item": url,
-                    },
-                ],
+                "@id": f"{canonical_url}#breadcrumb",
+                "itemListElement": breadcrumb_items,
             },
         ],
     }
+    if faq_items:
+        structured["@graph"].append({
+            "@type": "FAQPage",
+            "@id": f"{canonical_url}#faq",
+            "mainEntity": faq_items,
+        })
+    extra_properties = []
+    for field, label in (
+        ("review_frequency", "Review frequency"),
+        ("tested_environment", "Tested environment"),
+        ("testing_methodology", "Testing methodology"),
+        ("content_status", "Content status"),
+    ):
+        if meta.get(field):
+            extra_properties.append({
+                "@type": "PropertyValue",
+                "name": label,
+                "value": meta[field],
+            })
+    if meta.get("original_research_data"):
+        extra_properties.append({
+            "@type": "PropertyValue",
+            "name": "Original research data",
+            "value": True,
+        })
+    if extra_properties:
+        structured["@graph"][0]["additionalProperty"] = extra_properties
+    if meta.get("cover_caption"):
+        structured["@graph"][0]["caption"] = meta["cover_caption"]
     schema = json.dumps(structured, ensure_ascii=False, indent=2).replace("</", "<\\/")
     content = render_markdown(body)
+    robots = (
+        "noindex, follow"
+        if meta.get("noindex")
+        else "index, follow, max-image-preview:large, max-snippet:-1"
+    )
+    google_bot = meta.get("google_bot", {})
+    google_bot_content = []
+    for key, value in google_bot.items():
+        name = str(key).replace("_", "-")
+        google_bot_content.append(f"{name}:{value}")
+    google_bot_value = ", ".join(google_bot_content) or robots
+    crumb_html = "".join(
+        f'<li><a href="{html.escape(_site_url(str(item["url"]), SITE + "/"), quote=True)}">'
+        f'{html.escape(str(item["name"]))}</a></li>'
+        for item in breadcrumbs[:-1]
+    ) + f'<li><span aria-current="page">{html.escape(str(breadcrumbs[-1]["name"]))}</span></li>'
+    destination = _site_url(
+        meta.get("destination_url"), f"{SITE}/#bundles"
+    )
+    cta_text = html.escape(meta.get("cta_text", "Browse TeraBox video bundles"))
+    reading_time = meta.get("reading_time") or f"{max(1, (meta['word_count'] + 199) // 200)} min read"
+    cover_html = ""
+    if meta.get("cover_image"):
+        cover_html = (
+            '<figure class="post-cover">'
+            f'<img src="{html.escape(image_url, quote=True)}" '
+            f'alt="{html.escape(image_alt, quote=True)}" loading="lazy">'
+            + (f"<figcaption>{html.escape(meta['cover_caption'])}</figcaption>"
+               if meta.get("cover_caption") else "")
+            + "</figure>"
+        )
+    og_type = html.escape(meta.get("og_type", "article"), quote=True)
+    updated_html = (
+        f'<span class="updated-date">Updated: {html.escape(modified_date)}</span>'
+        if modified_date != date
+        else ""
+    )
     return f'''<!doctype html>
 <!-- Generated from posts-src/{slug}.md; managed by tools/publish_post.py. -->
 <html lang="{language}">
@@ -356,22 +697,23 @@ def article_html(meta: dict[str, str], body: str) -> str:
   <meta name="theme-color" content="#050505">
   <title>{title} | TeraBox Video Link</title>
   <meta name="description" content="{description}">
-  <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+  <meta name="robots" content="{robots}">
+  <meta name="googlebot" content="{html.escape(google_bot_value, quote=True)}">
   <meta name="author" content="terabox video link">
-  <link rel="canonical" href="{url}">
+  <link rel="canonical" href="{html.escape(canonical_url, quote=True)}">
   <link rel="alternate" type="application/rss+xml" title="terabox video link" href="/feed.xml">
   <link rel="icon" href="/public/images/favicon.png" type="image/png">
-  <meta property="og:type" content="article">
+  <meta property="og:type" content="{og_type}">
   <meta property="og:site_name" content="terabox video link">
   <meta property="og:title" content="{title}">
   <meta property="og:description" content="{description}">
-  <meta property="og:url" content="{url}">
-   <meta property="og:image" content="{image_url}">
+  <meta property="og:url" content="{html.escape(canonical_url, quote=True)}">
+   <meta property="og:image" content="{html.escape(social_image_url, quote=True)}">
    <meta property="og:image:alt" content="{html.escape(image_alt, quote=True)}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{title}">
   <meta name="twitter:description" content="{description}">
-  <meta name="twitter:image" content="{image_url}">
+  <meta name="twitter:image" content="{html.escape(social_image_url, quote=True)}">
    <meta name="twitter:image:alt" content="{html.escape(image_alt, quote=True)}">
   <link rel="stylesheet" href="/legal.css">
   <script type="application/ld+json">{schema}</script>
@@ -388,21 +730,22 @@ def article_html(meta: dict[str, str], body: str) -> str:
       <h1>{title}</h1>
       <p class="legal-summary">{description}</p>
       <span class="updated-date">Published: {date}</span>
+      {updated_html}
+      <span class="reading-time">{html.escape(reading_time)}</span>
     </header>
     <nav class="legal-navigation" aria-label="Site pages">
       <a href="/">Home</a><a href="/guides">Guides</a><a href="/posts" aria-current="page">Posts</a><a href="/terabox-guide">Setup</a><a href="/troubleshooting">Fixes</a><a href="/safety-guide">Safety</a><a href="/faq">FAQ</a>
     </nav>
-    <nav class="breadcrumb" aria-label="Breadcrumb"><ol>
-      <li><a href="/">Home</a></li><li><a href="/posts">Posts</a></li><li><span aria-current="page">{title}</span></li>
-    </ol></nav>
+    <nav class="breadcrumb" aria-label="Breadcrumb"><ol>{crumb_html}</ol></nav>
     <div class="legal-content">
       <div class="legal-card">
+        {cover_html}
         {content}
       </div>
       <section class="legal-card">
         <h2>Browse TeraBox video bundles</h2>
         <p>Visit the homepage to see the available video bundles. Check each shared folder for its current contents and only access material you are authorized to use.</p>
-        <a class="home-button" href="/#bundles">View video bundles on the homepage</a>
+        <a class="home-button" href="{html.escape(destination, quote=True)}">{cta_text}</a>
         <p><a href="/">Go to the homepage</a></p>
       </section>
       <section class="legal-card">
@@ -595,7 +938,8 @@ def update_index_modified_date(
 
     existing_date = dt.date.fromisoformat(match.group(2))
     latest_post_date = max(
-        dt.date.fromisoformat(meta["date"]) for meta, _ in posts.values()
+        dt.date.fromisoformat(meta.get("last_updated", meta["date"]))
+        for meta, _ in posts.values()
     )
     modified_date = max(existing_date, latest_post_date)
     text = (
@@ -724,7 +1068,9 @@ def sync_posts(root: Path) -> None:
         article = root / "posts" / f"{slug}.html"
         article.parent.mkdir(parents=True, exist_ok=True)
         article.write_text(article_html(meta, body), encoding="utf-8")
-        update_sitemap(sitemap, slug, meta["date"], meta["title"])
+        update_sitemap(
+            sitemap, slug, meta.get("last_updated", meta["date"]), meta["title"]
+        )
         update_feed(feed, meta)
     refresh_feed_build_date(feed)
 
@@ -798,7 +1144,12 @@ def main() -> int:
     article.parent.mkdir(parents=True, exist_ok=True)
     article.write_text(article_html(meta, body), encoding="utf-8")
     update_index(root / "posts" / "index.html", meta)
-    update_sitemap(root / "sitemap.xml", meta["slug"], meta["date"], meta["title"])
+    update_sitemap(
+        root / "sitemap.xml",
+        meta["slug"],
+        meta.get("last_updated", meta["date"]),
+        meta["title"],
+    )
     update_feed(root / "feed.xml", meta)
 
     # The attached project snapshot keeps a staging mirror for copied page files.
