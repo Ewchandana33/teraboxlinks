@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "posts-src/*.md"
+      - "requirements-posts.txt"
       - "tools/publish_post.py"
       - "tests/**"
       - ".github/workflows/publish-posts.yml"
@@ -34,6 +35,9 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Install post-publisher dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements-posts.txt
 
       - name: Test, reconcile, and publish generated files
         shell: bash
