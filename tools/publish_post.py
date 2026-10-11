@@ -687,6 +687,10 @@ def article_html(meta: dict, body: str) -> str:
         if modified_date != date
         else ""
     )
+    updated_line = f"\n      {updated_html}" if updated_html else ""
+    article_content = (
+        f"        {cover_html}\n" if cover_html else ""
+    ) + f"        {content}"
     return f'''<!doctype html>
 <!-- Generated from posts-src/{slug}.md; managed by tools/publish_post.py. -->
 <html lang="{language}">
@@ -729,8 +733,7 @@ def article_html(meta: dict, body: str) -> str:
       </a>
       <h1>{title}</h1>
       <p class="legal-summary">{description}</p>
-      <span class="updated-date">Published: {date}</span>
-      {updated_html}
+      <span class="updated-date">Published: {date}</span>{updated_line}
       <span class="reading-time">{html.escape(reading_time)}</span>
     </header>
     <nav class="legal-navigation" aria-label="Site pages">
@@ -739,8 +742,7 @@ def article_html(meta: dict, body: str) -> str:
     <nav class="breadcrumb" aria-label="Breadcrumb"><ol>{crumb_html}</ol></nav>
     <div class="legal-content">
       <div class="legal-card">
-        {cover_html}
-        {content}
+{article_content}
       </div>
       <section class="legal-card">
         <h2>Browse TeraBox video bundles</h2>
