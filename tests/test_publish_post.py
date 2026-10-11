@@ -328,6 +328,10 @@ class PublishReconciliationTests(unittest.TestCase):
         self.assertIn('<table class="data-table">', article)
         self.assertIn('href="/troubleshooting"', article)
         self.assertEqual(article.count("<h1>"), 1)
+        self.assertFalse(
+            any(line.endswith((" ", "\t")) for line in article.splitlines()),
+            "Generated HTML must not contain trailing whitespace.",
+        )
 
     def test_fenced_code_is_escaped_and_unsafe_links_are_not_rendered(self) -> None:
         source = self.root / "posts-src" / "active-post.md"
