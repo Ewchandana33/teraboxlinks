@@ -790,16 +790,13 @@ function initializeResponsiveFooterAd() {
                 label: "desktop"
             };
         slot.classList.add(isMobile ? "is-mobile" : "is-desktop");
-        const optionsScript = document.createElement("script");
-        optionsScript.type = "text/javascript";
-        optionsScript.textContent =
-            "window.atOptions = " + JSON.stringify({
-                key: unit.key,
-                format: "iframe",
-                height: unit.height,
-                width: unit.width,
-                params: {}
-            }) + ";";
+        window.atOptions = {
+            key: unit.key,
+            format: "iframe",
+            height: unit.height,
+            width: unit.width,
+            params: {}
+        };
         const invokeScript = document.createElement("script");
         invokeScript.dataset.adsterra = "footer-" + unit.label;
         invokeScript.dataset.cfasync = "false";
@@ -810,7 +807,7 @@ function initializeResponsiveFooterAd() {
             unit.key +
             "/invoke.js";
         slot.dataset.adsterraReady = "true";
-        frame.append(optionsScript, invokeScript);
+        frame.append(invokeScript);
         configureAdSlots();
     }
     if (document.readyState === "complete") {
