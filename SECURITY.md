@@ -62,7 +62,7 @@ This policy applies to:
 
 - `[https://teraboxlinks.pages.dev/](https://teraboxlinks.pages.dev/)`;
 - source files in this repository;
-- the GitHub Pages deployment workflow;
+- the Cloudflare Pages deployment workflow;
 - external links published by the website.
 
 Third-party services, including TeraBox, Google Play and GitHub, operate under
