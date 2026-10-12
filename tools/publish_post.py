@@ -962,6 +962,62 @@ def update_index_modified_date(
     path.write_text(text, encoding="utf-8")
 
 
+def update_homepage_posts(
+    path: Path,
+    posts: dict[str, tuple[dict[str, str], str]],
+) -> None:
+    """Keep the homepage's latest-post cards in sync with published sources."""
+    text = path.read_text(encoding="utf-8")
+    start_marker = "<!-- BEGIN AUTO-GENERATED LATEST POSTS -->"
+    end_marker = "<!-- END AUTO-GENERATED LATEST POSTS -->"
+    if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+        fail(f"Expected one generated latest-posts region in {path}.")
+
+    cards = []
+    for slug in sorted(
+        posts,
+        key=lambda value: (posts[value][0]["date"], value),
+        reverse=True,
+    )[:3]:
+        meta = posts[slug][0]
+        cards.append(
+            f'<a class="guide-card" href="/posts/{html.escape(slug, quote=True)}">'
+            f'<strong>{html.escape(meta["title"])}</strong>'
+            f'<span>{html.escape(meta["description"])}</span></a>'
+        )
+
+    if cards:
+        content = (
+            '<section class="information-card" id="latest-posts" '
+            'aria-labelledby="latest-posts-title">\n'
+            '            <h2 id="latest-posts-title">LATEST POSTS</h2>\n'
+            '            <div class="guide-grid">\n'
+            + "\n".join(f"                {card}" for card in cards)
+            + '\n            </div>\n'
+            '            <p><a class="card-link" href="/posts">View all posts</a></p>\n'
+            "        </section>"
+        )
+    else:
+        content = (
+            '<section class="information-card" id="latest-posts" '
+            'aria-labelledby="latest-posts-title">\n'
+            '            <h2 id="latest-posts-title">LATEST POSTS</h2>\n'
+            '            <p>New posts will appear here automatically.</p>\n'
+            "        </section>"
+        )
+
+    region = re.compile(
+        re.escape(start_marker) + r".*?" + re.escape(end_marker),
+        re.DOTALL,
+    )
+    text = region.sub(
+        lambda _: f"{start_marker}\n        {content}\n        {end_marker}",
+        text,
+        count=1,
+    )
+    path.write_text(text, encoding="utf-8")
+
+
 def remove_sitemap_entries(path: Path, slugs: set[str]) -> None:
     if not slugs:
         return
@@ -1023,7 +1079,8 @@ def sync_posts(root: Path) -> None:
     index = root / "posts" / "index.html"
     sitemap = root / "sitemap.xml"
     feed = root / "feed.xml"
-    for path in (source_dir, index, sitemap, feed):
+    homepage = root / "index.html"
+    for path in (source_dir, index, sitemap, feed, homepage):
         if not path.exists():
             fail(f"Run this from the site repository root; missing: {path.relative_to(root)}")
 
@@ -1057,11 +1114,18 @@ def sync_posts(root: Path) -> None:
     ET.parse(feed)
     if not re.search(r'<div class="guide-grid">', index.read_text(encoding="utf-8")):
         fail(f"Expected Posts index guide-grid was not found in {index}.")
+    homepage_text = homepage.read_text(encoding="utf-8")
+    if (
+        homepage_text.count("<!-- BEGIN AUTO-GENERATED LATEST POSTS -->") != 1
+        or homepage_text.count("<!-- END AUTO-GENERATED LATEST POSTS -->") != 1
+    ):
+        fail(f"Expected one generated latest-posts region in {homepage}.")
 
     # Remove all previously managed cards/items/URLs first, then re-add the
     # complete current source set. Unrelated hand-authored content is retained.
     set_index_cards(index, posts, managed_slugs)
     update_index_modified_date(index, posts)
+    update_homepage_posts(homepage, posts)
     remove_sitemap_entries(sitemap, managed_slugs)
     remove_feed_items(feed, managed_slugs)
 
