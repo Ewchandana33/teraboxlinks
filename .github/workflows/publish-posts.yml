@@ -6,8 +6,10 @@ on:
       - main
     paths:
       - "posts-src/*.md"
+      - "posts-src/README.txt"
       - "tools/publish_post.py"
       - "tests/**"
+      - "starter/post-template.md"
       - ".github/workflows/publish-posts.yml"
   workflow_dispatch:
 
@@ -67,7 +69,7 @@ jobs:
 
             base_sha="$(git rev-parse HEAD)"
             git commit -m "chore(posts): publish Markdown source updates"
-            if push_output="$(git push origin "HEAD:${GITHUB_REF_NAME}" 2>&1)"; then
+            if push_output="$(git push origin "HEAD:$GITHUB_REF_NAME" 2>&1)"; then
               printf '%s\n' "$push_output"
               exit 0
             fi
