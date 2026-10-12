@@ -1,9 +1,5 @@
 {
   "images": {
-    "public/images/banner.jpg": {
-      "params": "q82-w640-m1200",
-      "sha256": "aa21367d0e34b567d78d9add7ad7766b06ce71f21a4d555d75692a28a44facd1"
-    },
     "public/images/logo.png": {
       "params": "q82-w256-m1200",
       "sha256": "b12f3a93437bf1b954c0552be16ea9c564dfba2d42a18cecf3a592a02322498c"
