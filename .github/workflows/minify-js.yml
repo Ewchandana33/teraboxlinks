@@ -1,0 +1,76 @@
+name: Minify browser JavaScript
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - app.js
+      - .github/workflows/minify-js.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: minify-js-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  minify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+          persist-credentials: true
+      - name: Build cache-busted minified bundle
+        shell: bash
+        env:
+          TERSER_VERSION: "5.51.2"
+        run: |
+          set -euo pipefail
+          npx --yes "terser@${TERSER_VERSION}" app.js --compress --mangle --output /tmp/app.min.js
+          node --check /tmp/app.min.js
+          hash="$(sha256sum /tmp/app.min.js | cut -c1-12)"
+          asset="app.${hash}.min.js"
+          cp /tmp/app.min.js "$asset"
+          find . -maxdepth 1 -type f -regextype posix-extended -regex './app\.[0-9a-f]{12}\.min\.js' ! -name "$asset" -delete
+          python3 - "$asset" <<'PY'
+          from pathlib import Path
+          import re, sys
+          asset = sys.argv[1]
+          path = Path('index.html')
+          text = path.read_text(encoding='utf-8')
+          pattern = r'(<script\b[^>]*\bsrc=["\'])/app(?:\.[0-9a-f]{12})?(?:\.min)?\.js(["\'])'
+          updated, count = re.subn(pattern, lambda m: m.group(1) + '/' + asset + m.group(2), text, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one app.js bundle reference; found {count}')
+          path.write_text(updated, encoding='utf-8')
+          PY
+          echo "Built $asset ($(wc -c < "$asset") bytes)"
+      - name: Commit generated bundle if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- index.html app.*.min.js
+          if git diff --cached --quiet; then
+            echo "Minified bundle is already current."
+            exit 0
+          fi
+          git commit -m "build(js): refresh minified browser bundle"
+          for attempt in 1 2 3 4 5; do
+            if git push origin "HEAD:${GITHUB_REF_NAME}"; then
+              echo "Bundle pushed."
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt). Rebasing on the latest branch."
+            if ! git pull --rebase origin "${GITHUB_REF_NAME}"; then
+              git rebase --abort || true
+              echo "::error::Rebase conflict while publishing the generated bundle."
+              exit 1
+            fi
+            sleep $((attempt * 3))
+          done
+          echo "::error::Could not push the generated bundle after 5 attempts."
+          exit 1
