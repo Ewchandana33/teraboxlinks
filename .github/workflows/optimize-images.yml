@@ -38,7 +38,7 @@ jobs:
       ALT_TEXT: "terabox video links"
       WEBP_QUALITY: "82"
       MAX_DIMENSION: "1200"
-      IMAGE_MAX_WIDTHS: '{"public/images/banner.jpg": 640, "public/images/logo.png": 256}'
+      IMAGE_MAX_WIDTHS: '{"public/images/logo.png": 256}'
       FORCE_RECONVERT: ${{ inputs.force_reconvert || 'false' }}
       FORCE_ALT_ON_DECORATIVE: ${{ inputs.force_alt_on_decorative || 'false' }}
     steps:
@@ -75,8 +75,9 @@ jobs:
           STATE_PATH = ROOT / ".github" / "image-optimizer-state.json"
           SKIP_DIRS = {"node_modules", "_site", "dist", "build", "__pycache__"}
           SOURCE_EXTS = {".png", ".jpg", ".jpeg"}
+          # Keep the Open Graph banner as JPEG for social crawler compatibility.
           EXCLUDE_NAME = re.compile(
-              r"(favicon|apple-touch-icon|touch-icon|maskable|(^|[-_.])icon([-_.]|$))",
+              r"(favicon|apple-touch-icon|touch-icon|maskable|(^|[-_.])icon([-_.]|$)|(^|[-_.])banner([-_.]|$))",
               re.I,
           )
           MIN_DIM = 480
