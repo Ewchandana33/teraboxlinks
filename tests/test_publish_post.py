@@ -48,6 +48,17 @@ class PublishReconciliationTests(unittest.TestCase):
 """,
             encoding="utf-8",
         )
+        (self.root / "index.html").write_text(
+            """<main>
+<!-- BEGIN AUTO-GENERATED LATEST POSTS -->
+<section class="information-card" id="latest-posts">
+  <a class="guide-card" href="/posts/deleted-post">Stale homepage card</a>
+</section>
+<!-- END AUTO-GENERATED LATEST POSTS -->
+</main>
+""",
+            encoding="utf-8",
+        )
         (self.root / "posts" / "active-post.html").write_text("old generated page")
         (self.root / "posts" / "deleted-post.html").write_text("deleted generated page")
         (self.root / "posts" / "manual-post.html").write_text("manual page")
@@ -97,6 +108,9 @@ class PublishReconciliationTests(unittest.TestCase):
         self.assertFalse("/posts/deleted-post" in (self.root / "posts" / "index.html").read_text())
         self.assertFalse("/posts/deleted-post" in (self.root / "feed.xml").read_text())
         self.assertFalse("/posts/deleted-post" in (self.root / "sitemap.xml").read_text())
+        homepage = (self.root / "index.html").read_text()
+        self.assertNotIn("/posts/deleted-post", homepage)
+        self.assertIn("/posts/active-post", homepage)
         self.assertIn(
             "<lastBuildDate>Thu, 08 Oct 2026 00:00:00 GMT</lastBuildDate>",
             (self.root / "feed.xml").read_text(),
@@ -112,6 +126,7 @@ class PublishReconciliationTests(unittest.TestCase):
         for output in ("posts/new-post.html", "site-files/posts/new-post.html"):
             self.assertTrue((self.root / output).exists(), output)
         self.assertIn("/posts/new-post", (self.root / "posts" / "index.html").read_text())
+        self.assertIn("/posts/new-post", (self.root / "index.html").read_text())
         self.assertIn("/posts/new-post", (self.root / "feed.xml").read_text())
         self.assertIn("/posts/new-post", (self.root / "sitemap.xml").read_text())
         self.assertEqual(
@@ -127,6 +142,7 @@ class PublishReconciliationTests(unittest.TestCase):
         self.assertFalse((self.root / "site-files" / "posts" / "active-post.html").exists())
         self.assertNotIn("/posts/active-post", (self.root / "feed.xml").read_text())
         self.assertNotIn("/posts/active-post", (self.root / "sitemap.xml").read_text())
+        self.assertNotIn("/posts/active-post", (self.root / "index.html").read_text())
         self.assertTrue((self.root / "posts" / "manual-post.html").exists())
         self.assertEqual(
             json.loads((self.root / "tools" / "published-posts.json").read_text()), []
@@ -150,7 +166,7 @@ class PublishReconciliationTests(unittest.TestCase):
             "site-files/posts/new-post.html",
         ):
             self.assertTrue((self.root / output).exists(), output)
-        for relative in ("posts/index.html", "feed.xml", "sitemap.xml"):
+        for relative in ("index.html", "posts/index.html", "feed.xml", "sitemap.xml"):
             text = (self.root / relative).read_text(encoding="utf-8")
             self.assertNotIn("/posts/active-post", text, relative)
             self.assertIn("/posts/new-post", text, relative)
@@ -162,6 +178,7 @@ class PublishReconciliationTests(unittest.TestCase):
     def test_reconciliation_is_idempotent(self) -> None:
         self.run_sync()
         generated_paths = (
+            "index.html",
             "posts/index.html",
             "posts/active-post.html",
             "feed.xml",
@@ -181,6 +198,29 @@ class PublishReconciliationTests(unittest.TestCase):
 
         for relative, content in first_run.items():
             self.assertEqual((self.root / relative).read_bytes(), content, relative)
+
+    def test_homepage_shows_three_most_recent_posts_and_escapes_metadata(self) -> None:
+        for slug, date in (
+            ("second-post", "2026-10-09"),
+            ("third-post", "2026-10-10"),
+            ("fourth-post", "2026-10-11"),
+        ):
+            content = markdown(slug, f"Title <script>{slug}</script>")
+            content = content.replace('date: "2026-10-08"', f'date: "{date}"')
+            (self.root / "posts-src" / f"{slug}.md").write_text(
+                content, encoding="utf-8"
+            )
+
+        self.run_sync()
+
+        homepage = (self.root / "index.html").read_text(encoding="utf-8")
+        self.assertIn("/posts/second-post", homepage)
+        self.assertIn("/posts/third-post", homepage)
+        self.assertIn("/posts/fourth-post", homepage)
+        self.assertNotIn("/posts/active-post", homepage)
+        self.assertIn("&lt;script&gt;fourth-post&lt;/script&gt;", homepage)
+        self.assertNotIn("<script>fourth-post</script>", homepage)
+        self.assertIn('href="/posts">View all posts</a>', homepage)
 
     def test_posts_index_visible_and_structured_dates_advance_with_post_update(self) -> None:
         (self.root / "posts-src" / "active-post.md").write_text(
