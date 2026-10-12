@@ -28,11 +28,12 @@ permission, privacy, and safety before moving a post into this folder.
 
 When a .md file is added, edited, renamed, or deleted on main, GitHub Actions
 tests the publisher and reconciles the complete posts-src/ set with generated
-posts/<slug>.html pages, posts/index.html, sitemap.xml, feed.xml, the generated
-post manifest, and matching site-files mirrors. It commits those generated
-files back to main. Deleting a Markdown source removes its generated page,
-listing card, RSS item, sitemap URL, and matching mirror; hand-authored pages
-and unrelated feed/sitemap entries are retained.
+posts/<slug>.html pages, the three latest-post cards on index.html,
+posts/index.html, sitemap.xml, feed.xml, the generated post manifest, and
+matching site-files mirrors. It commits those generated files back to main.
+Deleting a Markdown source removes its generated page, homepage and posts-page
+cards, RSS item, sitemap URL, and matching mirror; hand-authored pages and
+unrelated feed/sitemap entries are retained.
 
 Cloudflare Pages should deploy from the generated commit when connected to this
 branch. Verify its deployment before treating a post as live. Actions settings
