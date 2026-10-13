@@ -62,7 +62,7 @@
   </url>
   <url>
     <loc>https://teraboxlinks.pages.dev/posts</loc>
-    <lastmod>2026-10-10</lastmod>
+    <lastmod>2026-10-13</lastmod>
   </url>
   <url>
     <loc>https://teraboxlinks.pages.dev/posts/terabox-movie</loc>
@@ -86,6 +86,14 @@
     <image:image>
       <image:loc>https://teraboxlinks.pages.dev/public/images/banner.jpg</image:loc>
       <image:title>TeraBox Viral Video Links (2026): Browse Shared Video Bundles</image:title>
+    </image:image>
+  </url>
+  <url>
+    <loc>https://teraboxlinks.pages.dev/posts/terabox-shared-folder-guide</loc>
+    <lastmod>2026-10-13</lastmod>
+    <image:image>
+      <image:loc>https://teraboxlinks.pages.dev/public/images/banner.jpg</image:loc>
+      <image:title>TeraBox Shared Folder: How to Open, Browse, and Download Files</image:title>
     </image:image>
   </url>
 </urlset>
